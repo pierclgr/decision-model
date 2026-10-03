@@ -1,0 +1,1 @@
+MAX_LETTER_OPTIONS: int = 26
