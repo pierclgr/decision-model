@@ -91,6 +91,9 @@ class SystemOnePipeline(ChunkPipeline):
                 tokenize=True,
                 return_dict=True,
                 return_tensors="pt",
+                # the answer letter comes right after the prompt (some
+                # templates, e.g. Qwen3.8, think by default)
+                enable_thinking=False,
             )
             yield {
                 "is_last": i == len(questions) - 1,

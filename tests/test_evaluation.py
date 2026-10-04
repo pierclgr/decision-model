@@ -45,3 +45,15 @@ def test_options_are_not_shuffled(model, processor, tmp_path) -> None:
     first = evaluator(model, processor, tmp_path).predict(RECORDS)
     second = evaluator(model, processor, tmp_path).predict(RECORDS)
     assert (first.label_ids == second.label_ids).all()
+
+
+def test_accepts_training_args_with_evaluation(model, processor, tmp_path) -> None:
+    # the training's args: evaluation on, but the evaluator has no eval dataset
+    args = TrainingArguments(
+        output_dir=str(tmp_path), per_device_eval_batch_size=2, report_to=[],
+        use_cpu=True, eval_strategy="epoch",
+    )
+    output = SystemOneEvaluator(model, processor, args).predict(RECORDS)
+    assert math.isfinite(output.metrics["test_loss"])
+    # the caller's args are not changed
+    assert args.eval_strategy == "epoch"

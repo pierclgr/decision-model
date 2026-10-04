@@ -123,3 +123,16 @@ def test_lora_init_follows_seed(config, processor, tmp_path) -> None:
         )
     assert weights[0].keys() == weights[1].keys()
     assert all(torch.equal(weights[0][n], weights[1][n]) for n in weights[0])
+
+
+def test_tensorboard_logs_in_output_dir(
+    model, processor, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # restores the variable that build_trainer sets
+    monkeypatch.setenv("TENSORBOARD_LOGGING_DIR", "")
+    args = training_args(tmp_path)
+    args.report_to = ["tensorboard"]
+    trainer = build_trainer(model, processor, RECORDS, None, LoraSettings(), args)
+    trainer.train()
+    assert list(tmp_path.glob("events.out.tfevents.*"))
+    assert not (tmp_path / "runs").exists()

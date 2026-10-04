@@ -5,6 +5,14 @@ from PIL import Image
 
 from src.common.types import Question
 
+# final line of the prompt: System One reads the letter logits right after it
+SYSTEM_ONE_INSTRUCTION: str = "Answer with the letter of the correct option only."
+# System Two generates its answer in a fixed block, parsed by `SystemTwoModel`
+SYSTEM_TWO_INSTRUCTION: str = (
+    "Answer exactly in this format:\n<answer>\n[letter of the correct option]"
+    "\n</answer>\nFor example, if the correct option is A:\n<answer>\nA\n</answer>"
+)
+
 
 class PromptBuilder:
     """Builds chat messages and maps option letters to token ids.
@@ -12,12 +20,20 @@ class PromptBuilder:
     Args:
         tokenizer: Tokenizer of the backbone.
         max_options: Number of letters to resolve (A, B, C, ...).
+        instruction: Final line of the prompt (`SYSTEM_ONE_INSTRUCTION` or
+            `SYSTEM_TWO_INSTRUCTION`).
 
     Raises:
         ValueError: If a letter is not a single token.
     """
 
-    def __init__(self, tokenizer: Any, max_options: int) -> None:
+    def __init__(
+        self,
+        tokenizer: Any,
+        max_options: int,
+        instruction: str = SYSTEM_ONE_INSTRUCTION,
+    ) -> None:
+        self.instruction: str = instruction
         self.letters: list[str] = list(string.ascii_uppercase[:max_options])
         self.letter_ids: list[int] = []
         for letter in self.letters:
@@ -41,7 +57,7 @@ class PromptBuilder:
         )
         text: str = (
             f"{state}\n\nQuestion: {question.text}\n\nOptions:\n{options}\n\n"
-            "Answer with the letter of the correct option only."
+            f"{self.instruction}"
         )
         content: list[dict[str, Any]] = [
             {"type": "image", "image": image} for image in images

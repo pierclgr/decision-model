@@ -9,7 +9,7 @@ from transformers import HfArgumentParser
 class ConfigParser:
     """Loads YAML run configs with CLI overrides into typed dataclasses.
 
-    Shared by the training and the test configs.
+    Shared by the training, calibration and test configs.
     """
 
     @staticmethod

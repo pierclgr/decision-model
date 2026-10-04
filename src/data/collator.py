@@ -16,12 +16,23 @@ class SystemOneCollator:
         processor: Processor matching the backbone. Its tokenizer is set to
             left padding, so the answer slot is the last position.
         prompt: Prompt builder (same as inference).
+        template_kwargs: Chat template variables. Default: thinking off
+            (System One reads the answer letter right after the prompt; some
+            templates, e.g. Qwen3.8, think by default).
     """
 
-    def __init__(self, processor: Any, prompt: PromptBuilder) -> None:
+    def __init__(
+        self,
+        processor: Any,
+        prompt: PromptBuilder,
+        template_kwargs: dict[str, Any] | None = None,
+    ) -> None:
         processor.tokenizer.padding_side = "left"
         self.processor: Any = processor
         self.prompt: PromptBuilder = prompt
+        self.template_kwargs: dict[str, Any] = (
+            {"enable_thinking": False} if template_kwargs is None else template_kwargs
+        )
 
     def __call__(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         """Builds the batch.
@@ -42,6 +53,7 @@ class SystemOneCollator:
             return_dict=True,
             return_tensors="pt",
             processor_kwargs={"padding": True},
+            **self.template_kwargs,
         )
         num_options: int = max(len(item["target"]) for item in items)
         labels = torch.zeros(len(items), num_options)

@@ -12,12 +12,14 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
     - `config.py`: `DecisionModelConfig` (`PreTrainedConfig`)
     - `system_one.py`: `PreTrainedSystemOneModel` (`PreTrainedModel`
       wrapping the backbone, option logits, probabilities and loss)
+    - `system_two.py`: `SystemTwoModel` (wraps a System One model, the
+      backbone generates its answer; System Two test mode)
   - `common/`: shared code
     - `types.py`: `Question`
     - `request.py`: `RequestParser` (request parsing)
     - `prompt.py`: `PromptBuilder` (chat messages, letter token ids)
     - `config_parser.py`: `ConfigParser` (YAML configs with CLI overrides,
-      used by `TrainConfig` and `TestConfig`)
+      used by `TrainConfig`, `CalibrationConfig` and `TestConfig`)
   - `data/`: training data
     - `dataset.py`: `SystemOneDataset` (labelled records, one item per
       question, choice option shuffle)
@@ -29,8 +31,10 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
     - `system_one.py`: `SystemOnePipeline` (HF `ChunkPipeline`, Jev
       `/v1/systemone` request and response)
   - `training/`: LoRA training and calibration
-    - `config.py`: `TrainConfig` (YAML run config: `backbone`, `lora`,
-      `data`, `training`, optional `calibration`)
+    - `config.py`: `TrainConfig` (YAML run config: `backbone`, `seed`,
+      `lora`, `data`, `training`, optional `calibration`) and
+      `CalibrationConfig` (standalone calibration: `model`, `seed`, `data`,
+      `calibration`, `calibrating`)
     - `train.py`: training script (`Trainer`, LoRA on the language model;
       calibrates at the end if configured)
     - `metrics.py`: `DecisionMetrics` (accuracy, Brier score, ECE)
@@ -45,9 +49,11 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
   - `modal/`: Modal cloud runs
     - `app.py`: Modal app with `cache`, `train`, `calibrate`, `test`
       (GPUs, Volumes `models`, `datasets`, `runs` as persistent caches)
-      and `tensorboard` (web app on the `runs` Volume)
+    - `tensorboard_app.py`: separate Modal app serving TensorBoard (web
+      app on the `runs` Volume), so runs of `app.py` can go in parallel
     - `cache.py`: downloads a config's backbone and dataset (cache)
 - `configs/train/`: training run configs (YAML)
+- `configs/calibration/`: standalone calibration configs (YAML)
 - `configs/test/`: test run configs (YAML)
 - `tests/`: unit tests (tiny random backbone, no downloads)
 - `docs/`: documentation
@@ -58,19 +64,21 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
 - `uv run pytest`: run the tests
 - `uv run python -m src.training.train configs/train/<run>.yml
   [--section.key value]`: train (the gated dataset needs `hf auth login`)
-- `uv run python -m src.training.calibration configs/train/<run>.yml
-  <model_dir>`: calibrate a saved model
+- `uv run python -m src.training.calibration configs/calibration/<run>.yml
+  [--section.key value]`: calibrate a saved model
 - `uv run python -m src.testing.test configs/test/<run>.yml
-  [--section.key value]`: test a trained model, prints the metrics
+  [--section.key value]`: test a trained model (or a raw HF backbone in
+  `model`, zero-shot; a `system_two` section for System Two), prints the
+  metrics
 - `uv run python -m src.modal.cache configs/train/<run>.yml`: download
   the backbone and dataset of a config
 - `modal run [--detach] src/modal/app.py --task cache|train|calibrate|test
-  --config <config.yml> [--model-dir <dir>] [--overrides "..."] [--gpu X]`:
+  --config <config.yml> [--overrides "..."] [--gpu X]`:
   same tasks on Modal (needs `modal setup` and Secret `huggingface` with
   `HF_TOKEN`); GPU from the config's `modal.gpu` (default H200), `--gpu`
   wins
-- `modal deploy src/modal/app.py`: serve TensorBoard on the training logs
-  (URL printed)
+- `modal deploy src/modal/tensorboard_app.py`: serve TensorBoard on the
+  training logs (URL printed)
 
 ## Conventions
 - Python: PEP8, Google docstrings, type hints everywhere (PEP 484)

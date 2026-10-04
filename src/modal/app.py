@@ -1,6 +1,7 @@
 """Modal app: caching, training, calibration and testing on cloud GPUs.
 
-Also serves TensorBoard on the training logs.
+TensorBoard is a separate app (`src/modal/tensorboard_app.py`), so runs of
+this app create no web endpoint and can run in parallel.
 
 Persistent Volumes (created on first use), so big data is downloaded once:
 - `models`: HF Hub cache (backbones), mounted at `/root/models`
@@ -18,8 +19,7 @@ repository root:
     modal run --detach src/modal/app.py --task train \\
         --config configs/train/qwen3_8_27b.yml
     modal run src/modal/app.py --task calibrate \\
-        --config configs/train/qwen3_8_27b.yml \\
-        --model-dir runs/qwen3_8_27b/final
+        --config configs/calibration/qwen3_8_27b.yml
     modal run src/modal/app.py --task test --config configs/test/qwen3_8_27b.yml
 
 GPU: the config's `modal.gpu` (default H200), e.g.
@@ -31,14 +31,9 @@ Options: `--overrides "--training.learning_rate 5e-5"` (config overrides),
 `--gpu H100` (instead of the config's GPU). `--detach` keeps the run going
 if the local client disconnects (Ctrl+C stops only the log streaming).
 
-TensorBoard on the `runs` Volume (needs `report_to: tensorboard` in the
-training config), at the URL printed by:
-
-    modal deploy src/modal/app.py
 """
 
 import shlex
-from collections.abc import Callable, Iterable
 from pathlib import Path
 
 import modal
@@ -104,53 +99,6 @@ def test(argv: list[str]) -> None:
     main(argv)
 
 
-class RunsReloadMiddleware:
-    """WSGI middleware: reloads the `runs` Volume on each page load.
-
-    A running container sees only the Volume state from its start, so
-    TensorBoard shows new training logs only after a reload.
-    """
-
-    def __init__(self, app: Callable) -> None:
-        """Wraps a WSGI app.
-
-        Args:
-            app: The TensorBoard WSGI app.
-        """
-        self.app: Callable = app
-
-    def __call__(self, environ: dict, start_response: Callable) -> Iterable[bytes]:
-        """Reloads the Volume on `/`, then runs the wrapped app."""
-        if environ.get("PATH_INFO") == "/":
-            try:
-                VOLUMES["runs"].reload()
-            # reload fails while TensorBoard has files open, keep the old state
-            except Exception as error:
-                print(f"runs Volume reload failed: {error}")
-        return self.app(environ, start_response)
-
-
-@app.function(max_containers=1, scaledown_window=5 * 60)
-@modal.concurrent(max_inputs=100)
-@modal.wsgi_app()
-def tensorboard() -> Callable:
-    """Serves TensorBoard on the `runs` Volume (training logs)."""
-    from tensorboard import program
-    from tensorboard.backend import application
-
-    board = program.TensorBoard()
-    board.configure(logdir=f"{ROOT}/runs")
-    data_provider, multiplexer = board._make_data_provider()
-    return application.TensorBoardWSGIApp(
-        board.flags,
-        board.plugin_loaders,
-        data_provider,
-        board.assets_zip_provider,
-        multiplexer,
-        experimental_middlewares=[RunsReloadMiddleware],
-    )._create_wsgi_app()
-
-
 def config_gpu(config: str, gpu: str) -> str:
     """Returns the GPU of a run.
 
@@ -174,34 +122,27 @@ TASKS: dict[str, modal.Function] = {
 
 
 @app.local_entrypoint()
-def main(
-    task: str, config: str, model_dir: str = "", overrides: str = "", gpu: str = ""
-) -> None:
+def main(task: str, config: str, overrides: str = "", gpu: str = "") -> None:
     """Runs a task on Modal.
 
     Args:
         task: `cache`, `train`, `calibrate` or `test`.
         config: Config path, relative to the repository root (a training
-            config for `cache`, `train` and `calibrate`, a test config for
-            `test`).
-        model_dir: Model to calibrate, e.g. `runs/<run>/final` (`calibrate`
-            only).
+            config for `cache` and `train`, a calibration config for
+            `calibrate`, a test config for `test`).
         overrides: Config overrides, e.g. `"--lora.r 8 --checkpoint x"`.
         gpu: GPU instead of the config's `modal.gpu` (e.g. `H100`,
             `A100-80GB`). Ignored by `cache` (CPU only).
 
     Raises:
-        ValueError: If the task is unknown, or `calibrate` has no model dir.
+        ValueError: If the task is unknown.
     """
     if task not in TASKS:
         raise ValueError(f"task must be one of {sorted(TASKS)}")
-    if task == "calibrate" and not model_dir:
-        raise ValueError("calibrate needs --model-dir")
-    argv: list[str] = [config, *([model_dir] if task == "calibrate" else [])]
     function = (
         TASKS[task]
         if task == "cache"
         else TASKS[task].with_options(gpu=config_gpu(config, gpu))
     )
     # a spawned call survives ctrl+c with --detach, a `.remote()` one is cancelled
-    function.spawn([*argv, *shlex.split(overrides)]).get()
+    function.spawn([config, *shlex.split(overrides)]).get()

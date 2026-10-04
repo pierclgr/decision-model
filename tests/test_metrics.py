@@ -44,3 +44,22 @@ def test_soft_labels_use_most_likely_option() -> None:
     metrics = evaluate([[0.2, 0.8]], [[0.3, 0.7]])
     assert metrics["accuracy"] == pytest.approx(1.0)
     assert metrics["brier"] == pytest.approx(0.1**2 * 2)
+
+
+def test_errors_count_wrong() -> None:
+    # System Two: predictions are (logits, probabilities, errors); the
+    # uniform error row ties on its label A, but is an error
+    probs = np.array([[0.5, 0.5], [0.9, 0.1]], dtype=np.float32)
+    errors = np.array([True, False])
+    labels = np.array([[1.0, 0.0], [1.0, 0.0]])
+    metrics = DecisionMetrics()(
+        EvalPrediction((np.zeros_like(probs), probs, errors), labels)
+    )
+    assert metrics["accuracy"] == pytest.approx(0.5)
+    assert metrics["errors"] == pytest.approx(0.5)
+    # bins: 0.5 wrong (gap 0.5), 0.9 right (gap 0.1)
+    assert metrics["ece"] == pytest.approx(0.3)
+
+
+def test_system_one_has_no_errors_metric() -> None:
+    assert "errors" not in evaluate([[1.0, 0.0]], [[1.0, 0.0]])

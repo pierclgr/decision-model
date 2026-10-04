@@ -66,3 +66,17 @@ def test_batch_feeds_model(processor, model) -> None:
     assert torch.isfinite(out.loss)
     out.loss.backward()
     assert out.probabilities[1, 2] == 0.0
+
+
+def test_thinking_is_off_by_default(processor) -> None:
+    collator(processor)(items())
+    assert processor.kwargs["enable_thinking"] is False
+
+
+def test_template_kwargs(processor) -> None:
+    kwargs = {"enable_thinking": True, "reasoning_effort": "low"}
+    SystemOneCollator(
+        processor, PromptBuilder(processor.tokenizer, 26), template_kwargs=kwargs
+    )(items())
+    assert processor.kwargs["enable_thinking"] is True
+    assert processor.kwargs["reasoning_effort"] == "low"

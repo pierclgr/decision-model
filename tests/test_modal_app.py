@@ -10,27 +10,9 @@ def test_app_defines_the_tasks() -> None:
     assert sorted(modal_app.TASKS) == ["cache", "calibrate", "test", "train"]
 
 
-class FakeVolume:
-    """Counts `reload` calls."""
-
-    def __init__(self) -> None:
-        self.reloads: int = 0
-
-    def reload(self) -> None:
-        self.reloads += 1
-
-
-def test_app_defines_tensorboard() -> None:
-    assert modal_app.tensorboard is not None
-
-
-def test_runs_reload_middleware_reloads_on_page_load(monkeypatch) -> None:
-    volume: FakeVolume = FakeVolume()
-    monkeypatch.setitem(modal_app.VOLUMES, "runs", volume)
-    middleware = modal_app.RunsReloadMiddleware(lambda environ, start: [b"ok"])
-    assert middleware({"PATH_INFO": "/"}, None) == [b"ok"]
-    assert middleware({"PATH_INFO": "/data/runs"}, None) == [b"ok"]
-    assert volume.reloads == 1
+def test_app_has_no_web_endpoint() -> None:
+    # a web function has a fixed URL, which blocks parallel runs of the app
+    assert not hasattr(modal_app, "tensorboard")
 
 
 @pytest.mark.parametrize(

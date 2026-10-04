@@ -85,3 +85,37 @@ def test_temperature_override(tmp_path: Path) -> None:
 def test_bad_temperature_raises(tmp_path: Path, value: str) -> None:
     with pytest.raises(ValueError):
         TestConfig.from_yaml(write(tmp_path), ["--temperature", value])
+
+
+def test_system_two_is_off_without_section(tmp_path: Path) -> None:
+    assert TestConfig.from_yaml(write(tmp_path)).system_two is None
+
+
+def test_system_two_section(tmp_path: Path) -> None:
+    config = TestConfig.from_yaml(write(tmp_path, YAML + "system_two:\n"))
+    assert config.system_two is not None
+    assert config.system_two.thinking == "off"
+    # thinking off: an answer block is about 10 tokens
+    assert config.system_two.max_new_tokens == 256
+    config = TestConfig.from_yaml(
+        write(tmp_path, YAML + "system_two:\n  thinking: low\n  max_new_tokens: 512\n")
+    )
+    assert (config.system_two.thinking, config.system_two.max_new_tokens) == ("low", 512)
+
+
+def test_system_two_from_override(tmp_path: Path) -> None:
+    config = TestConfig.from_yaml(write(tmp_path), ["--system_two.thinking", "xhigh"])
+    assert config.system_two.thinking == "xhigh"
+
+
+@pytest.mark.parametrize(
+    "section", ["system_two:\n  thinking: on\n", "system_two:\n  foo: 1\n"]
+)
+def test_bad_system_two_raises(tmp_path: Path, section: str) -> None:
+    with pytest.raises(ValueError):
+        TestConfig.from_yaml(write(tmp_path, YAML + section))
+
+
+def test_thinking_keeps_the_large_cap(tmp_path: Path) -> None:
+    config = TestConfig.from_yaml(write(tmp_path), ["--system_two.thinking", "low"])
+    assert config.system_two.max_new_tokens == 32768

@@ -113,3 +113,52 @@ def test_fit_sets_positive_temperature(model, processor, tmp_path) -> None:
     temperature = calibrator.calibrate(CalibrationSettings(temperature="fit"), RECORDS)
     assert temperature > 0
     assert model.config.temperature == temperature
+
+
+SCRIPT_YAML: str = """
+model: {model}
+data:
+  dataset: org/kev
+  train: train
+calibration:
+  temperature: {temperature}
+  split: 0.5
+calibrating:
+  output_dir: {output_dir}
+  per_device_eval_batch_size: 2
+  use_cpu: true
+  report_to: none
+"""
+
+
+@pytest.mark.parametrize("temperature", ["fit", "1.5"])
+def test_script_saves_temperature(
+    model, processor, tmp_path, monkeypatch: pytest.MonkeyPatch, temperature: str
+) -> None:
+    from types import SimpleNamespace
+
+    from src.training import calibration as script
+
+    config = tmp_path / "calibration.yml"
+    config.write_text(SCRIPT_YAML.format(
+        model=tmp_path / "model", temperature=temperature,
+        output_dir=tmp_path / "out",
+    ))
+    pipeline = SimpleNamespace(model=model, processor=processor)
+    monkeypatch.setattr(
+        script.SystemOnePipeline, "from_pretrained", lambda *a, **k: pipeline
+    )
+    rows = datasets.Dataset.from_dict({
+        "state": [json.dumps(r["state"]) for r in RECORDS * 2],
+        "questions": [json.dumps(r["questions"]) for r in RECORDS * 2],
+        "image": [None] * 6,
+    })
+    monkeypatch.setattr(
+        script.HubRecordLoader, "load",
+        lambda self, split: HubRecordLoader.convert(rows),
+    )
+    script.main([str(config)])
+    saved = json.loads((tmp_path / "model" / "config.json").read_text())
+    assert saved["temperature"] == model.config.temperature > 0
+    if temperature != "fit":
+        assert saved["temperature"] == 1.5

@@ -23,11 +23,47 @@ class TestDataSettings:
     split: str
 
 
+# System Two thinking: off, or the reasoning effort (Qwen3.8 template levels)
+THINKING: tuple[str, ...] = ("off", "low", "medium", "xhigh")
+
+
+@dataclass
+class SystemTwoSettings:
+    """System Two mode: the model generates its answer (see `SystemTwoModel`).
+
+    Attributes:
+        thinking: `off`, or a reasoning effort `low`, `medium`, `xhigh`
+            (thinking on; Qwen3.5 has no levels, any of them is just on).
+            YAML reads a bare `off` as false, which is accepted as `off`.
+        max_new_tokens: Cap on generated tokens, thinking included. Each
+            question stops at `</answer>` or the model's end token; the cap
+            only stops outputs that never do. Default: 256 with thinking off
+            (an answer block is about 10 tokens), 32768 with thinking (Qwen's
+            suggested output length for thinking).
+
+    Raises:
+        ValueError: If `thinking` is not one of the levels.
+    """
+
+    thinking: str = "off"
+    max_new_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.thinking is False:
+            self.thinking = "off"
+        if self.thinking not in THINKING:
+            raise ValueError(f"thinking must be one of {THINKING}")
+        if self.max_new_tokens is None:
+            self.max_new_tokens = 256 if self.thinking == "off" else 32768
+        self.max_new_tokens = int(self.max_new_tokens)
+
+
 @dataclass
 class TestConfig:
     """Test run configuration, loaded from a YAML file.
 
-    The YAML has a `model` key, an optional `temperature` key and the sections `data` and `testing` (any HF
+    The YAML has a `model` key, an optional `temperature` key, the sections
+    `data` and `testing` (any HF
     `TrainingArguments` key, e.g. `per_device_eval_batch_size`, `bf16`;
     `output_dir` is where `test_metrics.json` is written). Values are
     converted to the field types.
@@ -39,6 +75,8 @@ class TestConfig:
         testing: `Trainer` arguments for the prediction run.
         temperature: Temperature instead of the model's saved one (e.g. 1.0
             for uncalibrated scores), or None to use the saved one.
+        system_two: System Two settings (optional `system_two` section, even
+            empty), or None for System One.
 
     Raises:
         ValueError: If the temperature is not > 0.
@@ -51,6 +89,7 @@ class TestConfig:
     data: TestDataSettings
     testing: TrainingArguments
     temperature: float | None = None
+    system_two: SystemTwoSettings | None = None
 
     def __post_init__(self) -> None:
         if self.temperature is not None and self.temperature <= 0:
@@ -75,10 +114,19 @@ class TestConfig:
                 unknown or missing.
         """
         values: dict[str, Any] = ConfigParser.load(
-            path, overrides, keys=["model", "temperature"], sections=["data", "testing"]
+            path,
+            overrides,
+            keys=["model", "temperature"],
+            sections=["data", "testing", "system_two"],
         )
         model: str = str(values.pop("model"))
         temperature: Any = values.pop("temperature", None)
+        system_two: SystemTwoSettings | None = None
+        if "system_two" in values:
+            try:
+                system_two = SystemTwoSettings(**(values.pop("system_two") or {}))
+            except TypeError as error:
+                raise ValueError("unknown system_two keys") from error
         data = ConfigParser.parse(TestDataSettings, values.pop("data", None) or {})
         testing = ConfigParser.parse(
             TrainingArguments, values.pop("testing", None) or {}
@@ -90,4 +138,5 @@ class TestConfig:
             data=data,
             testing=testing,
             temperature=None if temperature is None else float(temperature),
+            system_two=system_two,
         )

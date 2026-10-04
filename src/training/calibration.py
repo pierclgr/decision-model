@@ -1,14 +1,14 @@
 """Calibration of the global temperature of a System One model.
 
-Run standalone to calibrate a trained model, e.g. after quantization. It uses
-the config's `calibration` section. To fit, it rebuilds the calibration set
-carved out of `data.train` at training time: use the same config (train
-split, `calibration.split`, `seed`) as the training run, or the fit
-sees records the model was trained on. Only `config.json` of the model is
+Run standalone to calibrate a trained model, e.g. after quantization, with a
+calibration config (`configs/calibration/`). To fit, it rebuilds the
+calibration set carved out of `data.train` at training time: the config's
+`seed`, `data` and `calibration.split` must match the training config, or the
+fit sees records the model was trained on. Only `config.json` of the model is
 rewritten, not the weights.
 
 Usage:
-    uv run python -m src.training.calibration <config.yml> <model_dir> \\
+    uv run python -m src.training.calibration configs/calibration/<run>.yml \\
         [--section.key value]
 """
 
@@ -23,7 +23,7 @@ from transformers import TrainingArguments
 from src.data.hub import HubRecordLoader
 from src.model.system_one import PreTrainedSystemOneModel
 from src.pipeline.system_one import SystemOnePipeline
-from src.training.config import CalibrationSettings, TrainConfig
+from src.training.config import CalibrationConfig, CalibrationSettings
 from src.training.evaluation import SystemOneEvaluator
 
 
@@ -124,21 +124,18 @@ class TemperatureCalibrator:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Fits or sets the temperature and saves it in `<model_dir>/config.json`.
+    """Fits or sets the temperature and saves it in `<model>/config.json`.
 
     Args:
         argv: Command-line arguments without the program name (default:
             `sys.argv[1:]`).
     """
     argv = sys.argv[1:] if argv is None else argv
-    if len(argv) < 2:
+    if not argv:
         raise SystemExit(__doc__)
-    config = TrainConfig.from_yaml(argv[0], argv[2:])
-    if config.calibration is None:
-        raise SystemExit("the config has no calibration section")
-    model_dir: str = argv[1]
+    config = CalibrationConfig.from_yaml(argv[0], argv[1:])
     pipeline = SystemOnePipeline.from_pretrained(
-        model_dir, dtype=PreTrainedSystemOneModel.default_dtype()
+        config.model, dtype=PreTrainedSystemOneModel.default_dtype()
     )
     records = None
     if config.calibration.temperature == "fit":
@@ -148,10 +145,10 @@ def main(argv: list[str] | None = None) -> None:
             config.seed,
         )
     calibrator = TemperatureCalibrator(
-        pipeline.model, pipeline.processor, config.training
+        pipeline.model, pipeline.processor, config.calibrating
     )
     temperature: float = calibrator.calibrate(config.calibration, records)
-    pipeline.model.config.save_pretrained(model_dir)
+    pipeline.model.config.save_pretrained(config.model)
     print(f"temperature: {temperature:.4f}")
 
 

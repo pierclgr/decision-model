@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 from transformers import Trainer, TrainingArguments
@@ -7,34 +8,41 @@ from src.common.prompt import PromptBuilder
 from src.data.collator import SystemOneCollator
 from src.data.dataset import SystemOneDataset
 from src.model.system_one import PreTrainedSystemOneModel
+from src.model.system_two import SystemTwoModel
 from src.training.metrics import DecisionMetrics
 
 
 class SystemOneEvaluator:
-    """Runs a System One model on labelled records, without training.
+    """Runs a decision model on labelled records, without training.
 
-    Used to test a model and to fit its temperature.
+    Used to test a model (System One or Two) and to fit its temperature.
 
     Args:
-        model: The System One model.
+        model: The System One model, or a `SystemTwoModel`.
         processor: Processor matching the backbone.
         training_args: `Trainer` arguments (device, eval batch size,
-            precision). `remove_unused_columns` is set to False, since the
-            collator needs the raw items.
+            precision). A copy is used, with `remove_unused_columns` False
+            (the collator needs the raw items) and `eval_strategy` "no" (no
+            eval dataset; the training's args may have evaluation on).
+        collator: Batch collator (default: the System One prompt, thinking
+            off).
     """
 
     def __init__(
         self,
-        model: PreTrainedSystemOneModel,
+        model: PreTrainedSystemOneModel | SystemTwoModel,
         processor: Any,
         training_args: TrainingArguments,
+        collator: SystemOneCollator | None = None,
     ) -> None:
         self.max_options: int = model.config.max_options
-        training_args.remove_unused_columns = False
         self.trainer: Trainer = Trainer(
             model=model,
-            args=training_args,
-            data_collator=SystemOneCollator(
+            args=replace(
+                training_args, remove_unused_columns=False, eval_strategy="no"
+            ),
+            data_collator=collator
+            or SystemOneCollator(
                 processor, PromptBuilder(processor.tokenizer, self.max_options)
             ),
             compute_metrics=DecisionMetrics(),

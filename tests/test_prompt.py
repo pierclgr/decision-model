@@ -1,8 +1,9 @@
 import pytest
 from PIL import Image
 
-from src.common.prompt import PromptBuilder
+from src.common.prompt import SYSTEM_ONE_INSTRUCTION, SYSTEM_TWO_INSTRUCTION, PromptBuilder
 from src.common.types import Question
+from src.model.system_two import ANSWER
 
 from conftest import FakeTokenizer
 
@@ -53,3 +54,21 @@ def test_build_messages_images_first() -> None:
     content = builder.build_messages("s", question, [image, image])[0]["content"]
     assert [part["type"] for part in content] == ["image", "image", "text"]
     assert content[0]["image"] is image
+
+
+@pytest.mark.parametrize(
+    ("instruction", "expected"),
+    [(None, SYSTEM_ONE_INSTRUCTION), (SYSTEM_TWO_INSTRUCTION, SYSTEM_TWO_INSTRUCTION)],
+)
+def test_answer_instruction(instruction: str | None, expected: str) -> None:
+    kwargs = {} if instruction is None else {"instruction": instruction}
+    builder = PromptBuilder(FakeTokenizer(), max_options=26, **kwargs)
+    question = Question(text="q", options=["x", "y"])
+    text = builder.build_messages("s", question, [])[0]["content"][0]["text"]
+    assert text.endswith(expected)
+
+
+def test_system_two_asks_for_the_answer_block() -> None:
+    assert "<answer>\n[letter of the correct option]\n</answer>" in SYSTEM_TWO_INSTRUCTION
+    # with an example that the answer regex parses
+    assert ANSWER.search(SYSTEM_TWO_INSTRUCTION).group(1) == "A"

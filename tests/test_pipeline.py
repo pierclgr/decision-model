@@ -133,3 +133,8 @@ def test_mismatched_letter_ids_raise(model, processor) -> None:
     model.config.option_token_ids = list(range(26))
     with pytest.raises(ValueError):
         SystemOnePipeline(model=model, processor=processor, device="cpu")
+
+
+def test_thinking_is_off(pipe, processor) -> None:
+    pipe(REQUEST)
+    assert processor.kwargs["enable_thinking"] is False

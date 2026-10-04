@@ -5,6 +5,7 @@ Example:
         --training.learning_rate 1e-4 --data.train "train[:1000]"
 """
 
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -60,7 +61,8 @@ def build_trainer(
         eval_records: Labelled evaluation records, or None.
         lora: LoRA settings.
         training_args: `Trainer` arguments. `remove_unused_columns` is set to
-            False, since the collator needs the raw items.
+            False, since the collator needs the raw items. TensorBoard logs
+            go to `output_dir` (`TENSORBOARD_LOGGING_DIR`).
 
     Returns:
         The trainer.
@@ -79,6 +81,9 @@ def build_trainer(
     )
     print(f"train questions: {len(train_dataset)}, skipped: {train_dataset.skipped}")
     training_args.remove_unused_columns = False
+    # tensorboard logs in output_dir, not in runs/<date>_<host>: the run is
+    # named after output_dir
+    os.environ["TENSORBOARD_LOGGING_DIR"] = training_args.output_dir
     # the lora weights are created before `Trainer` sets the seed
     set_seed(training_args.seed)
     return Trainer(

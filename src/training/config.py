@@ -161,3 +161,75 @@ SECTIONS: dict[str, type] = {
     "data": DataSettings,
     "training": TrainingArguments,
 }
+
+
+@dataclass
+class CalibrationConfig:
+    """Standalone calibration configuration, loaded from a YAML file.
+
+    Fits or sets the temperature of a trained model. To fit, the calibration
+    set carved out of `data.train` at training time is rebuilt, so `seed`,
+    `data` and `calibration.split` must match the training config.
+
+    The YAML has a `model` key, an optional `seed` key and the sections
+    `data`, `calibration` (optional, defaults as in `CalibrationSettings`) and
+    `calibrating` (any HF `TrainingArguments` key, for the prediction run).
+
+    Attributes:
+        model: Path to the trained model (weights + processor), e.g.
+            `runs/<run>/final`. Its `config.json` gets the temperature.
+        data: The training data (`dataset`, `train`; `validation` unused).
+        calibration: Calibration settings.
+        calibrating: `Trainer` arguments for the prediction run.
+        seed: Seed of the training run (rebuilds the calibration split).
+    """
+
+    model: str
+    data: DataSettings
+    calibration: CalibrationSettings
+    calibrating: TrainingArguments
+    seed: int = 42
+
+    @classmethod
+    def from_yaml(
+        cls, path: str | Path, overrides: list[str] | None = None
+    ) -> "CalibrationConfig":
+        """Loads the configuration from a YAML file.
+
+        Args:
+            path: The YAML file.
+            overrides: CLI overrides as `--key value` pairs, with dotted keys
+                for sections, e.g. `["--calibration.temperature", "1.5"]`.
+
+        Returns:
+            The configuration.
+
+        Raises:
+            ValueError: If an override is malformed, or a section or key is
+                unknown or missing.
+        """
+        values: dict[str, Any] = ConfigParser.load(
+            path,
+            overrides,
+            keys=["model", "seed"],
+            sections=["data", "calibration", "calibrating"],
+        )
+        model: str = str(values.pop("model"))
+        seed: int = int(values.pop("seed", 42))
+        try:
+            calibration = CalibrationSettings(**(values.pop("calibration", None) or {}))
+        except TypeError as error:
+            raise ValueError("unknown calibration keys") from error
+        data = ConfigParser.parse(DataSettings, values.pop("data", None) or {})
+        calibrating = ConfigParser.parse(
+            TrainingArguments, values.pop("calibrating", None) or {}
+        )
+        if values:
+            raise ValueError(f"unknown keys: {sorted(values)}")
+        return cls(
+            model=model,
+            data=data,
+            calibration=calibration,
+            calibrating=calibrating,
+            seed=seed,
+        )

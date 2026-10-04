@@ -1,0 +1,23 @@
+# standalone calibration of the trained qwen3_8_27b model on kev-vision
+# seed, data and calibration.split must match configs/train/qwen3_8_27b.yml
+model: runs/qwen3_8_27b/final
+seed: 42
+
+data:
+  dataset: Jacqkues/kev-vision-decisions-full
+  train: train
+
+# fit: on the calibration set carved out of data.train; or a fixed number
+calibration:
+  temperature: fit
+  split: 0.1
+
+# any hf TrainingArguments key, for the prediction run
+calibrating:
+  output_dir: runs/qwen3_8_27b/calibration
+  per_device_eval_batch_size: 4
+  bf16: true
+  report_to: none
+
+modal:
+  gpu: H100

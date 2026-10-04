@@ -18,11 +18,14 @@ class SystemOneOutput(ModelOutput):
         logits: Raw logits of the options (float32; masked options set to the
             float32 min), shape (batch, num_options).
         probabilities: Softmax of `logits / temperature`, same shape.
+        errors: System Two only: whether the output had no valid answer
+            block, shape (batch,). None for System One.
     """
 
     loss: torch.Tensor | None = None
     logits: torch.Tensor | None = None
     probabilities: torch.Tensor | None = None
+    errors: torch.Tensor | None = None
 
 
 class PreTrainedSystemOneModel(PreTrainedModel):

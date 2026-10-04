@@ -20,16 +20,22 @@ class FakeTokenizer:
     def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
         return [ord(c) for c in text]
 
+    def decode(self, ids: list[int], **kwargs) -> str:
+        return "".join(chr(i) for i in ids)
+
 
 class FakeProcessor:
-    """Records chat messages and returns fixed input ids."""
+    """Records chat messages and template kwargs, returns fixed input ids."""
 
     def __init__(self) -> None:
         self.tokenizer: FakeTokenizer = FakeTokenizer()
         self.messages: list[dict] | None = None
+        self.kwargs: dict = {}
+        self.chat_template: str = ""
 
     def apply_chat_template(self, messages: list, **kwargs) -> BatchFeature:
         self.messages = messages
+        self.kwargs = kwargs
         # a list of conversations is a batch
         batch_size: int = len(messages) if isinstance(messages[0], list) else 1
         input_ids = torch.tensor([[1, 2, 3]] * batch_size)

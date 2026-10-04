@@ -11,6 +11,8 @@ class DecisionMetrics:
       `(p_k - y_k)^2` (lower is better).
     - `ece`: expected calibration error over `NUM_BINS` equal-width
       confidence bins (confidence = max probability; 0 is perfect).
+    - `errors` (System Two only): fraction of questions whose output had
+      no valid answer block; they always count as wrong.
     """
 
     NUM_BINS: int = 10
@@ -23,6 +25,12 @@ class DecisionMetrics:
         labels: np.ndarray = np.clip(prediction.label_ids, 0.0, None)
         confidence: np.ndarray = probabilities.max(-1)
         correct: np.ndarray = probabilities.argmax(-1) == labels.argmax(-1)
+        metrics: dict[str, float] = {}
+        # System Two: (logits, probabilities, errors)
+        if len(prediction.predictions) > 2:
+            errors: np.ndarray = prediction.predictions[2].astype(bool)
+            correct &= ~errors
+            metrics["errors"] = float(errors.mean())
         bins: np.ndarray = np.minimum(
             (confidence * self.NUM_BINS).astype(int), self.NUM_BINS - 1
         )
@@ -35,4 +43,5 @@ class DecisionMetrics:
             "accuracy": float(correct.mean()),
             "brier": float(((probabilities - labels) ** 2).sum(-1).mean()),
             "ece": float(ece),
+            **metrics,
         }
