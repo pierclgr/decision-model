@@ -1,7 +1,7 @@
 import pytest
 
-from src.config import DecisionModelConfig
-from src.types import Question
+from src.common.types import Question
+from src.model.config import DecisionModelConfig
 
 
 def test_config_defaults() -> None:

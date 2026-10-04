@@ -1,0 +1,41 @@
+# lora training of qwen3.8-27b on kev-vision (h200, bf16)
+# hyperparameters are starting points, not tuned
+backbone: Qwen/Qwen3.8-27B
+seed: 42
+# resume from a Trainer checkpoint, e.g. runs/<run>/checkpoint-<step>
+checkpoint: null
+
+lora:
+  r: 16
+  alpha: 32
+
+data:
+  dataset: Jacqkues/kev-vision-decisions-full
+  train: train
+  validation: validation
+
+# any hf TrainingArguments key; num_epochs is num_train_epochs,
+# logging_steps defaults to 1 (every weight update)
+training:
+  output_dir: runs/qwen3_8_27b
+  num_epochs: 1
+  learning_rate: 1.4e-4
+  lr_scheduler_type: cosine
+  warmup_steps: 0.1
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 32
+  gradient_accumulation_steps: 2
+  bf16: true
+  gradient_checkpointing: true
+  eval_strategy: epoch
+  save_strategy: epoch
+  report_to: tensorboard
+
+# fit: the global temperature on `split` of the training records, carved out
+# before training (seeded with the run seed); or a fixed number
+calibration:
+  temperature: fit
+  split: 0.1
+
+modal:
+  gpu: H200

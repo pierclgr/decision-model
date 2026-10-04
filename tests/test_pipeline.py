@@ -4,8 +4,8 @@ import pytest
 import torch
 from PIL import Image
 
-from src.model import SystemOneOutput
-from src.pipeline import SystemOnePipeline
+from src.model.system_one import SystemOneOutput
+from src.pipeline.system_one import SystemOnePipeline
 
 INPUT_IDS: torch.Tensor = torch.tensor([[1, 2, 3]])
 

@@ -6,7 +6,7 @@ from torch import nn
 from transformers import AutoModelForMultimodalLM, PreTrainedModel
 from transformers.utils import ModelOutput
 
-from src.config import DecisionModelConfig
+from src.model.config import DecisionModelConfig
 
 
 @dataclass
@@ -14,10 +14,13 @@ class SystemOneOutput(ModelOutput):
     """Output of `PreTrainedSystemOneModel`.
 
     Attributes:
-        logits: Raw logits of the options, shape (batch, num_options).
+        loss: Cross-entropy of the raw option logits, only if `labels` given.
+        logits: Raw logits of the options (float32; masked options set to the
+            float32 min), shape (batch, num_options).
         probabilities: Softmax of `logits / temperature`, same shape.
     """
 
+    loss: torch.Tensor | None = None
     logits: torch.Tensor | None = None
     probabilities: torch.Tensor | None = None
 
@@ -38,6 +41,10 @@ class PreTrainedSystemOneModel(PreTrainedModel):
     config: DecisionModelConfig
     base_model_prefix = "backbone"
     input_modalities = ("image", "text")
+    # enabled on the backbone layers (`TrainingArguments.gradient_checkpointing`)
+    supports_gradient_checkpointing = True
+    # the loss is a plain mean: Trainer must scale it for gradient accumulation
+    accepts_loss_kwargs = False
 
     def __init__(
         self, config: DecisionModelConfig, backbone: nn.Module | None = None
@@ -87,11 +94,18 @@ class PreTrainedSystemOneModel(PreTrainedModel):
         backbone.config._attn_implementation = attn_implementation
         return model
 
+    @staticmethod
+    def default_dtype() -> torch.dtype:
+        """Returns the load dtype: bf16 on CUDA, float32 elsewhere."""
+        return torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
     def forward(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor | None = None,
         num_options: int | None = None,
+        labels: torch.Tensor | None = None,
+        option_mask: torch.Tensor | None = None,
         **backbone_kwargs: Any,
     ) -> SystemOneOutput:
         """Scores the options of a question.
@@ -101,11 +115,17 @@ class PreTrainedSystemOneModel(PreTrainedModel):
                 is the answer slot (use left padding).
             attention_mask: Attention mask of the prompt.
             num_options: Number of options (default: `config.max_options`).
+            labels: Optional targets: option indices, shape (batch,), or
+                option distributions (soft labels), shape
+                (batch, num_options).
+            option_mask: Optional bool mask of the real options, shape
+                (batch, num_options), for batches with different option
+                counts. Masked options get probability 0 and no loss.
             **backbone_kwargs: Extra inputs for the backbone (e.g.
                 `pixel_values`, `image_grid_thw`).
 
         Returns:
-            Logits and probabilities of the options.
+            Loss (if `labels` given), logits and probabilities of the options.
 
         Raises:
             ValueError: If the letter token ids are not set or there are more
@@ -125,8 +145,21 @@ class PreTrainedSystemOneModel(PreTrainedModel):
             **backbone_kwargs,
         ).logits
         letter_ids: list[int] = self.config.option_token_ids[:num_options]
-        option_logits: torch.Tensor = logits[:, -1, letter_ids]
+        option_logits: torch.Tensor = logits[:, -1, letter_ids].float()
+        if option_mask is not None:
+            # finite min, not -inf: soft-label loss would give 0 * -inf = nan
+            option_logits = option_logits.masked_fill(
+                ~option_mask, torch.finfo(option_logits.dtype).min
+            )
         probabilities: torch.Tensor = torch.softmax(
-            option_logits.float() / self.config.temperature, dim=-1
+            option_logits / self.config.temperature, dim=-1
         )
-        return SystemOneOutput(logits=option_logits, probabilities=probabilities)
+        # raw logits: the temperature is fitted after training
+        loss: torch.Tensor | None = (
+            nn.functional.cross_entropy(option_logits, labels)
+            if labels is not None
+            else None
+        )
+        return SystemOneOutput(
+            loss=loss, logits=option_logits, probabilities=probabilities
+        )

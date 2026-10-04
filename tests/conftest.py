@@ -6,14 +6,16 @@ import pytest
 import torch
 from transformers import BatchFeature, CLIPVisionConfig, LlamaConfig, LlavaConfig
 
-from src.config import DecisionModelConfig
-from src.model import PreTrainedSystemOneModel
+from src.model.config import DecisionModelConfig
+from src.model.system_one import PreTrainedSystemOneModel
 
 LETTER_IDS: list[int] = [ord(c) for c in string.ascii_uppercase]
 
 
 class FakeTokenizer:
     """Maps a single character to its code point."""
+
+    padding_side: str = "right"
 
     def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
         return [ord(c) for c in text]
@@ -26,9 +28,11 @@ class FakeProcessor:
         self.tokenizer: FakeTokenizer = FakeTokenizer()
         self.messages: list[dict] | None = None
 
-    def apply_chat_template(self, messages: list[dict], **kwargs) -> BatchFeature:
+    def apply_chat_template(self, messages: list, **kwargs) -> BatchFeature:
         self.messages = messages
-        input_ids = torch.tensor([[1, 2, 3]])
+        # a list of conversations is a batch
+        batch_size: int = len(messages) if isinstance(messages[0], list) else 1
+        input_ids = torch.tensor([[1, 2, 3]] * batch_size)
         return BatchFeature(
             {"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids)}
         )

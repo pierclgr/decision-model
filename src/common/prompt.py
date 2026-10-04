@@ -3,7 +3,7 @@ from typing import Any
 
 from PIL import Image
 
-from src.types import Question
+from src.common.types import Question
 
 
 class PromptBuilder:

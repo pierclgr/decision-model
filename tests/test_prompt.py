@@ -1,8 +1,8 @@
 import pytest
 from PIL import Image
 
-from src.prompt import PromptBuilder
-from src.types import Question
+from src.common.prompt import PromptBuilder
+from src.common.types import Question
 
 from conftest import FakeTokenizer
 

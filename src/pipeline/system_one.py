@@ -1,16 +1,15 @@
-import json
 from collections.abc import Iterator
 from os import PathLike
 from typing import Any
 
 from transformers import AutoProcessor
-from transformers.image_utils import load_image
 from transformers.pipelines.base import ChunkPipeline
 
+from src.common.prompt import PromptBuilder
+from src.common.request import RequestParser
+from src.common.types import Question
 from src.constants import MAX_LETTER_OPTIONS
-from src.model import PreTrainedSystemOneModel
-from src.prompt import PromptBuilder
-from src.types import Question
+from src.model.system_one import PreTrainedSystemOneModel
 
 
 class SystemOnePipeline(ChunkPipeline):
@@ -80,16 +79,11 @@ class SystemOnePipeline(ChunkPipeline):
 
     def preprocess(self, request: dict[str, Any]) -> Iterator[dict[str, Any]]:
         """Yields the model inputs of each question of the request."""
-        state: Any = request["state"]
-        state_text: str = (
-            state
-            if isinstance(state, str)
-            else json.dumps(state, indent=2, ensure_ascii=False)
-        )
-        images = [self._load_image(item) for item in request.get("media", [])]
+        state_text: str = RequestParser.render_text(request["state"])
+        images = RequestParser.load_media(request.get("media", []))
         questions: dict[str, dict[str, Any]] = request["questions"]
         for i, (question_id, spec) in enumerate(questions.items()):
-            question = self._build_question(spec)
+            question = RequestParser.build_question(spec)
             messages = self.prompt.build_messages(state_text, question, images)
             inputs = self.processor.apply_chat_template(
                 messages,
@@ -133,28 +127,6 @@ class SystemOnePipeline(ChunkPipeline):
                 "output_tokens": 0,
             },
         }
-
-    @staticmethod
-    def _load_image(item: dict[str, Any]) -> Any:
-        if item["type"] != "image":
-            raise ValueError(f"unsupported media type {item['type']!r}")
-        return load_image(item["data"])
-
-    @staticmethod
-    def _build_question(spec: dict[str, Any]) -> Question:
-        kind: str = spec["type"]
-        text: str = spec["instructions"]
-        criteria: Any = spec.get("criteria")
-        if kind == "choice":
-            return Question(text, list(criteria), list(criteria.values()))
-        if kind == "noul":
-            criteria = criteria or {}
-            return Question(
-                text, ["Yes", "No"], [criteria.get("true"), criteria.get("false")]
-            )
-        if kind == "score":
-            return Question(text, list(criteria))
-        raise ValueError(f"unknown question type {kind!r}")
 
     @staticmethod
     def _format_answer(

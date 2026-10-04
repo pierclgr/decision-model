@@ -1,0 +1,16 @@
+# test of the trained qwen3_5_0_8b model on kev-vision
+model: runs/qwen3_5_0_8b/final
+
+data:
+  dataset: Jacqkues/kev-vision-decisions-full
+  split: test
+
+# any hf TrainingArguments key; output_dir gets test_metrics.json
+testing:
+  output_dir: runs/qwen3_5_0_8b/test
+  per_device_eval_batch_size: 8
+  bf16: true
+  report_to: none
+
+modal:
+  gpu: H100
