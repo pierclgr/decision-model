@@ -1,6 +1,8 @@
 # AGENTS.md
 
 ## Project
+IMA: Instant Multimodal Answers.
+
 Decoder-based System One decision model. A pretrained multimodal HF LLM
 answers typed questions in one forward pass (no generation). Probabilities are
 read from the logits of the option letters. See `docs/MODEL_SPEC.md`.

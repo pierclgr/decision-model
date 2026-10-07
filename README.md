@@ -1,4 +1,4 @@
-# Decision Engine
+# IMA: Instant Multimodal Answers
 
 A fast decision model built on a pretrained multimodal LLM (Hugging Face).
 It answers typed questions about a state (text and images) in one forward
