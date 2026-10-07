@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="IMA logo" width="160">
+</p>
+
 # IMA: Instant Multimodal Answers
 
 A fast decision model built on a pretrained multimodal LLM (Hugging Face).
