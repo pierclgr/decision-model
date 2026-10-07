@@ -9,37 +9,55 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
 - `src/`: source code (package `src`, imports as `from src.x import ...`)
   - `constants.py`: shared constants
   - `model/`: the model
-    - `config.py`: `DecisionModelConfig` (`PreTrainedConfig`)
+    - `config.py`: `DecisionEngineConfig` (`PreTrainedConfig`)
+    - `output.py`: `DecisionEngineOutput` (shared model output;
+      `from_logits`: temperature softmax and loss, shared by both systems)
     - `system_one.py`: `PreTrainedSystemOneModel` (`PreTrainedModel`
       wrapping the backbone, option logits, probabilities and loss)
     - `system_two.py`: `SystemTwoModel` (wraps a System One model, the
-      backbone generates its answer; System Two test mode)
+      backbone generates its answer; System Two test mode;
+      `from_system_one` builds it with its prompt and thinking variables)
+    - `loader.py`: `ModelLoader` (loads a trained model or wraps a raw
+      backbone, picked from `model_type`; returns model and processor)
   - `common/`: shared code
     - `types.py`: `Question`
     - `request.py`: `RequestParser` (request parsing)
-    - `prompt.py`: `PromptBuilder` (chat messages, letter token ids)
+    - `question_types.py`: `QuestionType` and one class per type
+      (`ChoiceType`, `NoulType`, `ScoreType`: options, label index, answer
+      format); add a type here only
+    - `prompt.py`: `PromptBuilder` (chat messages, letter token ids, and
+      `encode`: the only chat template call, left padding)
     - `config_parser.py`: `ConfigParser` (YAML configs with CLI overrides,
-      used by `TrainConfig`, `CalibrationConfig` and `TestConfig`)
+      section helpers, used by `TrainConfig`, `CalibrationConfig` and
+      `TestConfig`)
   - `data/`: training data
-    - `dataset.py`: `SystemOneDataset` (labelled records, one item per
+    - `dataset.py`: `DecisionEngineDataset` (labelled records, one item per
       question, choice option shuffle)
-    - `collator.py`: `SystemOneCollator` (batch with `labels`,
+    - `collator.py`: `DecisionEngineCollator` (batch with `labels`,
       `option_mask`)
     - `hub.py`: `HubRecordLoader` (HF Hub dataset in the kev-vision layout
       to records)
+    - `config.py`: `DataSettings` (training data on the HF Hub, shared by
+      the training and calibration configs)
   - `pipeline/`: inference
     - `system_one.py`: `SystemOnePipeline` (HF `ChunkPipeline`, Jev
-      `/v1/systemone` request and response)
-  - `training/`: LoRA training and calibration
+      `/v1/systemone` request and response; `from_pretrained` loads a
+      trained model or a raw backbone)
+  - `evaluation/`: running models on labelled records (training and testing)
+    - `evaluator.py`: `DecisionEvaluator` (runs System One or Two on
+      records)
+    - `metrics.py`: `DecisionMetrics` (accuracy, Brier score, ECE, System
+      Two errors)
+  - `training/`: LoRA training
     - `config.py`: `TrainConfig` (YAML run config: `backbone`, `seed`,
-      `lora`, `data`, `training`, optional `calibration`) and
-      `CalibrationConfig` (standalone calibration: `model`, `seed`, `data`,
-      `calibration`, `calibrating`)
+      `lora`, `data`, `training`, optional `calibration`)
     - `train.py`: training script (`Trainer`, LoRA on the language model;
       calibrates at the end if configured)
-    - `metrics.py`: `DecisionMetrics` (accuracy, Brier score, ECE)
-    - `evaluation.py`: `SystemOneEvaluator` (runs a model on records)
-    - `calibration.py`: `TemperatureCalibrator` (global temperature) and
+  - `calibration/`: temperature calibration (after training or standalone)
+    - `config.py`: `CalibrationSettings` (also used by `TrainConfig`) and
+      `CalibrationConfig` (standalone calibration: `model`, `seed`, `data`,
+      `calibration`, `calibrating`)
+    - `calibrate.py`: `TemperatureCalibrator` (global temperature) and
       the standalone calibration script
   - `testing/`: standalone testing of a trained model
     - `config.py`: `TestConfig` (YAML: `model`, optional `temperature`,
@@ -55,7 +73,6 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
 - `configs/train/`: training run configs (YAML)
 - `configs/calibration/`: standalone calibration configs (YAML)
 - `configs/test/`: test run configs (YAML)
-- `tests/`: unit tests (tiny random backbone, no downloads)
 - `docs/`: documentation
 
 ## Commands
@@ -64,7 +81,7 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
 - `uv run pytest`: run the tests
 - `uv run python -m src.training.train configs/train/<run>.yml
   [--section.key value]`: train (the gated dataset needs `hf auth login`)
-- `uv run python -m src.training.calibration configs/calibration/<run>.yml
+- `uv run python -m src.calibration.calibrate configs/calibration/<run>.yml
   [--section.key value]`: calibrate a saved model
 - `uv run python -m src.testing.test configs/test/<run>.yml
   [--section.key value]`: test a trained model (or a raw HF backbone in

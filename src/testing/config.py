@@ -121,18 +121,12 @@ class TestConfig:
         )
         model: str = str(values.pop("model"))
         temperature: Any = values.pop("temperature", None)
-        system_two: SystemTwoSettings | None = None
-        if "system_two" in values:
-            try:
-                system_two = SystemTwoSettings(**(values.pop("system_two") or {}))
-            except TypeError as error:
-                raise ValueError("unknown system_two keys") from error
-        data = ConfigParser.parse(TestDataSettings, values.pop("data", None) or {})
-        testing = ConfigParser.parse(
-            TrainingArguments, values.pop("testing", None) or {}
+        system_two: SystemTwoSettings | None = ConfigParser.settings(
+            values, "system_two", SystemTwoSettings
         )
-        if values:
-            raise ValueError(f"unknown keys: {sorted(values)}")
+        data = ConfigParser.section(values, "data", TestDataSettings)
+        testing = ConfigParser.section(values, "testing", TrainingArguments)
+        ConfigParser.check_empty(values)
         return cls(
             model=model,
             data=data,

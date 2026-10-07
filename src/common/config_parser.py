@@ -82,3 +82,37 @@ class ConfigParser:
         if remaining:
             raise ValueError(f"unknown {dataclass_type.__name__} keys: {remaining}")
         return parsed
+
+    @staticmethod
+    def section(values: dict[str, Any], name: str, dataclass_type: type) -> Any:
+        """Pops a section and builds it with `parse` (missing: defaults)."""
+        return ConfigParser.parse(dataclass_type, values.pop(name, None) or {})
+
+    @staticmethod
+    def settings(values: dict[str, Any], name: str, settings_type: type) -> Any:
+        """Pops a section and builds a dataclass that converts its own values.
+
+        For types `parse` cannot read (e.g. `float | str`).
+
+        Returns:
+            The settings, or None if the section is missing.
+
+        Raises:
+            ValueError: If a key is unknown.
+        """
+        if name not in values:
+            return None
+        try:
+            return settings_type(**(values.pop(name) or {}))
+        except TypeError as error:
+            raise ValueError(f"unknown {name} keys") from error
+
+    @staticmethod
+    def check_empty(values: dict[str, Any]) -> None:
+        """Checks that all keys were read.
+
+        Raises:
+            ValueError: If keys are left.
+        """
+        if values:
+            raise ValueError(f"unknown keys: {sorted(values)}")

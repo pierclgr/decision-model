@@ -4,6 +4,7 @@ from typing import Any
 from PIL import Image
 from transformers.image_utils import load_image
 
+from src.common.question_types import question_type
 from src.common.types import Question
 
 
@@ -49,22 +50,11 @@ class RequestParser:
     def build_question(spec: dict[str, Any]) -> Question:
         """Turns a typed question spec into a lettered `Question`.
 
-        `choice` options are the criteria keys, `noul` options are "Yes" and
-        "No", `score` options are the levels.
+        The options depend on the question type (see `question_types`).
 
         Raises:
             ValueError: If the question type is unknown.
         """
-        kind: str = spec["type"]
-        text: str = RequestParser.render_text(spec["instructions"])
-        criteria: Any = spec.get("criteria")
-        if kind == "choice":
-            return Question(text, list(criteria), list(criteria.values()))
-        if kind == "noul":
-            criteria = criteria or {}
-            return Question(
-                text, ["Yes", "No"], [criteria.get("true"), criteria.get("false")]
-            )
-        if kind == "score":
-            return Question(text, list(criteria))
-        raise ValueError(f"unknown question type {kind!r}")
+        return question_type(spec["type"]).build(
+            RequestParser.render_text(spec["instructions"]), spec.get("criteria")
+        )

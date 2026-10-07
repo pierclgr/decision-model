@@ -2,26 +2,27 @@ import string
 from typing import Any
 
 from PIL import Image
+from transformers import BatchFeature
 
+from src.constants import SYSTEM_ONE_INSTRUCTION
 from src.common.types import Question
-
-# final line of the prompt: System One reads the letter logits right after it
-SYSTEM_ONE_INSTRUCTION: str = "Answer with the letter of the correct option only."
-# System Two generates its answer in a fixed block, parsed by `SystemTwoModel`
-SYSTEM_TWO_INSTRUCTION: str = (
-    "Answer exactly in this format:\n<answer>\n[letter of the correct option]"
-    "\n</answer>\nFor example, if the correct option is A:\n<answer>\nA\n</answer>"
-)
 
 
 class PromptBuilder:
-    """Builds chat messages and maps option letters to token ids.
+    """Builds and encodes chat messages, maps option letters to token ids.
+
+    The single place where prompts are turned into model inputs, shared by
+    inference and training, so both get the same inputs.
 
     Args:
-        tokenizer: Tokenizer of the backbone.
+        processor: Processor matching the backbone. Its tokenizer is set to
+            left padding, so the answer slot is the last position.
         max_options: Number of letters to resolve (A, B, C, ...).
         instruction: Final line of the prompt (`SYSTEM_ONE_INSTRUCTION` or
             `SYSTEM_TWO_INSTRUCTION`).
+        template_kwargs: Chat template variables. Default: thinking off
+            (System One reads the answer letter right after the prompt; some
+            templates, e.g. Qwen3.8, think by default).
 
     Raises:
         ValueError: If a letter is not a single token.
@@ -29,15 +30,23 @@ class PromptBuilder:
 
     def __init__(
         self,
-        tokenizer: Any,
+        processor: Any,
         max_options: int,
         instruction: str = SYSTEM_ONE_INSTRUCTION,
+        template_kwargs: dict[str, Any] | None = None,
     ) -> None:
+        processor.tokenizer.padding_side = "left"
+        self.processor: Any = processor
         self.instruction: str = instruction
+        self.template_kwargs: dict[str, Any] = (
+            {"enable_thinking": False} if template_kwargs is None else template_kwargs
+        )
         self.letters: list[str] = list(string.ascii_uppercase[:max_options])
         self.letter_ids: list[int] = []
         for letter in self.letters:
-            ids: list[int] = tokenizer.encode(letter, add_special_tokens=False)
+            ids: list[int] = processor.tokenizer.encode(
+                letter, add_special_tokens=False
+            )
             if len(ids) != 1:
                 raise ValueError(f"letter {letter!r} is not a single token")
             self.letter_ids.append(ids[0])
@@ -64,3 +73,20 @@ class PromptBuilder:
         ]
         content.append({"type": "text", "text": text})
         return [{"role": "user", "content": content}]
+
+    def encode(self, conversations: list[list[dict[str, Any]]]) -> BatchFeature:
+        """Encodes a batch of conversations (from `build_messages`).
+
+        Returns:
+            The processor outputs (`input_ids`, `attention_mask`, image
+            tensors), left padded.
+        """
+        return self.processor.apply_chat_template(
+            conversations,
+            add_generation_prompt=True,
+            tokenize=True,
+            return_dict=True,
+            return_tensors="pt",
+            processor_kwargs={"padding": True},
+            **self.template_kwargs,
+        )

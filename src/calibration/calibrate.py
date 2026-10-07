@@ -8,7 +8,7 @@ fit sees records the model was trained on. Only `config.json` of the model is
 rewritten, not the weights.
 
 Usage:
-    uv run python -m src.training.calibration configs/calibration/<run>.yml \\
+    uv run python -m src.calibration.calibrate configs/calibration/<run>.yml \\
         [--section.key value]
 """
 
@@ -20,11 +20,12 @@ import numpy as np
 import torch
 from transformers import TrainingArguments
 
+from src.calibration.config import CalibrationConfig, CalibrationSettings
+from src.common.prompt import PromptBuilder
 from src.data.hub import HubRecordLoader
+from src.evaluation.evaluator import DecisionEvaluator
+from src.model.loader import ModelLoader
 from src.model.system_one import PreTrainedSystemOneModel
-from src.pipeline.system_one import SystemOnePipeline
-from src.training.config import CalibrationConfig, CalibrationSettings
-from src.training.evaluation import SystemOneEvaluator
 
 
 class TemperatureCalibrator:
@@ -44,8 +45,8 @@ class TemperatureCalibrator:
         training_args: TrainingArguments,
     ) -> None:
         self.model: PreTrainedSystemOneModel = model
-        self.evaluator: SystemOneEvaluator = SystemOneEvaluator(
-            model, processor, training_args
+        self.evaluator: DecisionEvaluator = DecisionEvaluator(
+            model, PromptBuilder(processor, model.config.max_options), training_args
         )
 
     def calibrate(self, settings: CalibrationSettings, records: Any) -> float:
@@ -134,9 +135,7 @@ def main(argv: list[str] | None = None) -> None:
     if not argv:
         raise SystemExit(__doc__)
     config = CalibrationConfig.from_yaml(argv[0], argv[1:])
-    pipeline = SystemOnePipeline.from_pretrained(
-        config.model, dtype=PreTrainedSystemOneModel.default_dtype()
-    )
+    model, processor = ModelLoader.load(config.model)
     records = None
     if config.calibration.temperature == "fit":
         _, records = TemperatureCalibrator.split(
@@ -144,11 +143,9 @@ def main(argv: list[str] | None = None) -> None:
             config.calibration.split,
             config.seed,
         )
-    calibrator = TemperatureCalibrator(
-        pipeline.model, pipeline.processor, config.calibrating
-    )
+    calibrator = TemperatureCalibrator(model, processor, config.calibrating)
     temperature: float = calibrator.calibrate(config.calibration, records)
-    pipeline.model.config.save_pretrained(config.model)
+    model.config.save_pretrained(config.model)
     print(f"temperature: {temperature:.4f}")
 
 

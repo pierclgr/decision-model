@@ -6,7 +6,7 @@ from src.constants import MAX_LETTER_OPTIONS
 
 
 @strict
-class DecisionModelConfig(PreTrainedConfig):
+class DecisionEngineConfig(PreTrainedConfig):
     """Configuration of `PreTrainedSystemOneModel`.
 
     Attributes:

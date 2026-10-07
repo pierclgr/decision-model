@@ -13,9 +13,17 @@ class DecisionMetrics:
       confidence bins (confidence = max probability; 0 is perfect).
     - `errors` (System Two only): fraction of questions whose output had
       no valid answer block; they always count as wrong.
+
+    Args:
+        system_two: Whether the predictions come from System Two, i.e. are
+            (logits, probabilities, errors) instead of (logits,
+            probabilities).
     """
 
     NUM_BINS: int = 10
+
+    def __init__(self, system_two: bool = False) -> None:
+        self.system_two: bool = system_two
 
     def __call__(self, prediction: EvalPrediction) -> dict[str, float]:
         """Returns the metrics of an evaluation run."""
@@ -26,8 +34,7 @@ class DecisionMetrics:
         confidence: np.ndarray = probabilities.max(-1)
         correct: np.ndarray = probabilities.argmax(-1) == labels.argmax(-1)
         metrics: dict[str, float] = {}
-        # System Two: (logits, probabilities, errors)
-        if len(prediction.predictions) > 2:
+        if self.system_two:
             errors: np.ndarray = prediction.predictions[2].astype(bool)
             correct &= ~errors
             metrics["errors"] = float(errors.mean())

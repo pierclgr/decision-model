@@ -11,7 +11,7 @@ class HubRecordLoader:
 
     Rows hold `state` and `questions` as JSON strings and an optional `image`
     column (`{bytes, path}` or None). They are converted on access to records
-    for `SystemOneDataset`: `state`, `questions` and `media`.
+    for `DecisionEngineDataset`: `state`, `questions` and `media`.
 
     Args:
         repo_id: HF dataset id, e.g. `Jacqkues/kev-vision-decisions-full`.

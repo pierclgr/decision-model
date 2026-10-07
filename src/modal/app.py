@@ -85,8 +85,8 @@ def train(argv: list[str]) -> None:
 
 @app.function(gpu=GPU, timeout=DAY)
 def calibrate(argv: list[str]) -> None:
-    """Runs `src.training.calibration` with `argv`."""
-    from src.training.calibration import main
+    """Runs `src.calibration.calibrate` with `argv`."""
+    from src.calibration.calibrate import main
 
     main(argv)
 

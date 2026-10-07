@@ -5,34 +5,19 @@ import torch
 from src.common.prompt import PromptBuilder
 
 
-class SystemOneCollator:
-    """Turns `SystemOneDataset` items into a batch for the model.
+class DecisionEngineCollator:
+    """Turns `DecisionEngineDataset` items into a batch for System One or Two.
 
-    The prompt is built as in `SystemOnePipeline`. Questions with fewer options
-    than the largest one in the batch get zero labels and a False mask on the
-    missing options.
+    The prompt is built and encoded as in `SystemOnePipeline`. Questions with
+    fewer options than the largest one in the batch get zero labels and a
+    False mask on the missing options.
 
     Args:
-        processor: Processor matching the backbone. Its tokenizer is set to
-            left padding, so the answer slot is the last position.
         prompt: Prompt builder (same as inference).
-        template_kwargs: Chat template variables. Default: thinking off
-            (System One reads the answer letter right after the prompt; some
-            templates, e.g. Qwen3.8, think by default).
     """
 
-    def __init__(
-        self,
-        processor: Any,
-        prompt: PromptBuilder,
-        template_kwargs: dict[str, Any] | None = None,
-    ) -> None:
-        processor.tokenizer.padding_side = "left"
-        self.processor: Any = processor
+    def __init__(self, prompt: PromptBuilder) -> None:
         self.prompt: PromptBuilder = prompt
-        self.template_kwargs: dict[str, Any] = (
-            {"enable_thinking": False} if template_kwargs is None else template_kwargs
-        )
 
     def __call__(self, items: list[dict[str, Any]]) -> dict[str, Any]:
         """Builds the batch.
@@ -42,18 +27,13 @@ class SystemOneCollator:
             tensors) plus `labels` (batch, max options), `option_mask` (same
             shape) and `num_options`.
         """
-        messages = [
-            self.prompt.build_messages(item["state"], item["question"], item["images"])
-            for item in items
-        ]
-        batch = self.processor.apply_chat_template(
-            messages,
-            add_generation_prompt=True,
-            tokenize=True,
-            return_dict=True,
-            return_tensors="pt",
-            processor_kwargs={"padding": True},
-            **self.template_kwargs,
+        batch = self.prompt.encode(
+            [
+                self.prompt.build_messages(
+                    item["state"], item["question"], item["images"]
+                )
+                for item in items
+            ]
         )
         num_options: int = max(len(item["target"]) for item in items)
         labels = torch.zeros(len(items), num_options)

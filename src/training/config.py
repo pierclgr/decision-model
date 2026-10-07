@@ -4,7 +4,9 @@ from typing import Any
 
 from transformers import TrainingArguments
 
+from src.calibration.config import CalibrationSettings
 from src.common.config_parser import ConfigParser
+from src.data.config import DataSettings
 
 
 @dataclass
@@ -20,51 +22,11 @@ class LoraSettings:
     alpha: int = 32
 
 
-@dataclass
-class DataSettings:
-    """Training data on the HF Hub (kev-vision layout).
-
-    Attributes:
-        dataset: HF dataset id.
-        train: Training split (slices like `train[:1000]` work).
-        validation: Validation split, or None for no validation.
-    """
-
-    dataset: str
-    train: str
-    validation: str | None = None
-
-
-@dataclass
-class CalibrationSettings:
-    """Calibration of the global temperature.
-
-    Attributes:
-        temperature: `"fit"` to fit it on a calibration set carved out of the
-            training split, or a fixed value (> 0).
-        split: Fraction of the training records carved out for the fit
-            (0 < split < 1). Not used with a fixed temperature.
-
-    Raises:
-        ValueError: If the temperature is neither `"fit"` nor a positive
-            number, or the split is not in (0, 1).
-    """
-
-    temperature: float | str = "fit"
-    split: float = 0.1
-
-    def __post_init__(self) -> None:
-        self.split = float(self.split)
-        if not 0 < self.split < 1:
-            raise ValueError("calibration split must be in (0, 1)")
-        if self.temperature == "fit":
-            return
-        try:
-            self.temperature = float(self.temperature)
-        except ValueError as error:
-            raise ValueError("temperature must be 'fit' or a number") from error
-        if self.temperature <= 0:
-            raise ValueError("temperature must be > 0")
+SECTIONS: dict[str, type] = {
+    "lora": LoraSettings,
+    "data": DataSettings,
+    "training": TrainingArguments,
+}
 
 
 @dataclass
@@ -123,7 +85,7 @@ class TrainConfig:
             sections=[*SECTIONS, "calibration"],
         )
         backbone: str = str(values.pop("backbone"))
-        seed: int = int(values.pop("seed", 42))
+        seed: int = int(values.pop("seed", cls.seed))
         checkpoint: Any = values.pop("checkpoint", None)
         training: dict[str, Any] = values.get("training") or {}
         values["training"] = training
@@ -135,101 +97,18 @@ class TrainConfig:
         if "num_epochs" in training:
             training["num_train_epochs"] = training.pop("num_epochs")
         training.setdefault("logging_steps", 1)
-        calibration: CalibrationSettings | None = None
-        if "calibration" in values:
-            try:
-                calibration = CalibrationSettings(**(values.pop("calibration") or {}))
-            except TypeError as error:
-                raise ValueError("unknown calibration keys") from error
+        calibration: CalibrationSettings | None = ConfigParser.settings(
+            values, "calibration", CalibrationSettings
+        )
         sections = {
-            name: ConfigParser.parse(dataclass_type, values.pop(name, None) or {})
+            name: ConfigParser.section(values, name, dataclass_type)
             for name, dataclass_type in SECTIONS.items()
         }
-        if values:
-            raise ValueError(f"unknown keys: {sorted(values)}")
+        ConfigParser.check_empty(values)
         return cls(
             backbone=backbone,
             calibration=calibration,
             seed=seed,
             checkpoint=None if checkpoint is None else str(checkpoint),
             **sections,
-        )
-
-
-SECTIONS: dict[str, type] = {
-    "lora": LoraSettings,
-    "data": DataSettings,
-    "training": TrainingArguments,
-}
-
-
-@dataclass
-class CalibrationConfig:
-    """Standalone calibration configuration, loaded from a YAML file.
-
-    Fits or sets the temperature of a trained model. To fit, the calibration
-    set carved out of `data.train` at training time is rebuilt, so `seed`,
-    `data` and `calibration.split` must match the training config.
-
-    The YAML has a `model` key, an optional `seed` key and the sections
-    `data`, `calibration` (optional, defaults as in `CalibrationSettings`) and
-    `calibrating` (any HF `TrainingArguments` key, for the prediction run).
-
-    Attributes:
-        model: Path to the trained model (weights + processor), e.g.
-            `runs/<run>/final`. Its `config.json` gets the temperature.
-        data: The training data (`dataset`, `train`; `validation` unused).
-        calibration: Calibration settings.
-        calibrating: `Trainer` arguments for the prediction run.
-        seed: Seed of the training run (rebuilds the calibration split).
-    """
-
-    model: str
-    data: DataSettings
-    calibration: CalibrationSettings
-    calibrating: TrainingArguments
-    seed: int = 42
-
-    @classmethod
-    def from_yaml(
-        cls, path: str | Path, overrides: list[str] | None = None
-    ) -> "CalibrationConfig":
-        """Loads the configuration from a YAML file.
-
-        Args:
-            path: The YAML file.
-            overrides: CLI overrides as `--key value` pairs, with dotted keys
-                for sections, e.g. `["--calibration.temperature", "1.5"]`.
-
-        Returns:
-            The configuration.
-
-        Raises:
-            ValueError: If an override is malformed, or a section or key is
-                unknown or missing.
-        """
-        values: dict[str, Any] = ConfigParser.load(
-            path,
-            overrides,
-            keys=["model", "seed"],
-            sections=["data", "calibration", "calibrating"],
-        )
-        model: str = str(values.pop("model"))
-        seed: int = int(values.pop("seed", 42))
-        try:
-            calibration = CalibrationSettings(**(values.pop("calibration", None) or {}))
-        except TypeError as error:
-            raise ValueError("unknown calibration keys") from error
-        data = ConfigParser.parse(DataSettings, values.pop("data", None) or {})
-        calibrating = ConfigParser.parse(
-            TrainingArguments, values.pop("calibrating", None) or {}
-        )
-        if values:
-            raise ValueError(f"unknown keys: {sorted(values)}")
-        return cls(
-            model=model,
-            data=data,
-            calibration=calibration,
-            calibrating=calibrating,
-            seed=seed,
         )

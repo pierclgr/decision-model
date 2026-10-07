@@ -4,12 +4,13 @@ from typing import Any
 import torch
 from torch.utils.data import Dataset
 
+from src.common.question_types import QuestionType, question_type
 from src.common.request import RequestParser
 from src.common.types import Question
 from src.constants import MAX_LETTER_OPTIONS
 
 
-class SystemOneDataset(Dataset):
+class DecisionEngineDataset(Dataset):
     """Training items from labelled `/v1/systemone` records.
 
     A record is a request whose questions also hold a `label` (choice: option
@@ -20,9 +21,13 @@ class SystemOneDataset(Dataset):
 
     Args:
         records: The labelled records.
-        shuffle_options: Shuffle the options of `choice` questions at each
-            access (the target follows its option).
+        shuffle_options: Shuffle the options of the question types that
+            allow it (`choice`) at each access (the target follows its
+            option).
         max_options: Max options per question (one letter each).
+
+    Raises:
+        ValueError: If a question type is unknown.
     """
 
     def __init__(
@@ -37,10 +42,8 @@ class SystemOneDataset(Dataset):
         self.skipped: int = 0
         for i, record in enumerate(records):
             for question_id, spec in record["questions"].items():
-                num_options: int = (
-                    2 if spec["type"] == "noul" else len(spec["criteria"])
-                )
-                if num_options > max_options:
+                question: Question = RequestParser.build_question(spec)
+                if len(question.options) > max_options:
                     self.skipped += 1
                 else:
                     self.index.append((i, question_id))
@@ -62,9 +65,10 @@ class SystemOneDataset(Dataset):
         record_index, question_id = self.index[i]
         record: dict[str, Any] = self.records[record_index]
         spec: dict[str, Any] = record["questions"][question_id]
+        kind: QuestionType = question_type(spec["type"])
         question: Question = RequestParser.build_question(spec)
-        target: list[float] = self._target(spec, question)
-        if self.shuffle_options and spec["type"] == "choice":
+        target: list[float] = self._target(spec, kind, question)
+        if self.shuffle_options and kind.shuffle:
             question, target = self._shuffle(question, target)
         return {
             "type": spec["type"],
@@ -75,36 +79,19 @@ class SystemOneDataset(Dataset):
         }
 
     @staticmethod
-    def _target(spec: dict[str, Any], question: Question) -> list[float]:
-        kind: str = spec["type"]
+    def _target(
+        spec: dict[str, Any], kind: QuestionType, question: Question
+    ) -> list[float]:
         weights: list[float] = [0.0] * len(question.options)
         if "target" in spec:
             for key, weight in spec["target"].items():
-                index: int = SystemOneDataset._option_index(kind, key, question)
-                weights[index] = float(weight)
+                weights[kind.option_index(key, question)] = float(weight)
         else:
-            index = SystemOneDataset._option_index(kind, spec["label"], question)
-            weights[index] = 1.0
+            weights[kind.option_index(spec["label"], question)] = 1.0
         total: float = sum(weights)
         if total <= 0:
             raise ValueError("target sums to 0")
         return [weight / total for weight in weights]
-
-    @staticmethod
-    def _option_index(kind: str, key: Any, question: Question) -> int:
-        """Returns the option index of a label or target key."""
-        if kind == "choice":
-            if key not in question.options:
-                raise ValueError(f"unknown option {key!r}")
-            return question.options.index(key)
-        if kind == "noul":
-            if key not in (True, False, "true", "false"):
-                raise ValueError(f"unknown noul label {key!r}")
-            return 0 if key in (True, "true") else 1
-        index: int = int(key)
-        if not 0 <= index < len(question.options):
-            raise ValueError(f"level {index} out of range")
-        return index
 
     @staticmethod
     def _shuffle(

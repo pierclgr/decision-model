@@ -7,6 +7,7 @@ Example:
 
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -14,15 +15,15 @@ from peft import LoraConfig, get_peft_model
 from torch import nn
 from transformers import Trainer, TrainingArguments, set_seed
 
+from src.calibration.calibrate import TemperatureCalibrator
 from src.common.prompt import PromptBuilder
-from src.data.collator import SystemOneCollator
-from src.data.dataset import SystemOneDataset
+from src.data.collator import DecisionEngineCollator
+from src.data.dataset import DecisionEngineDataset
 from src.data.hub import HubRecordLoader
+from src.evaluation.metrics import DecisionMetrics
+from src.model.loader import ModelLoader
 from src.model.system_one import PreTrainedSystemOneModel
-from src.pipeline.system_one import SystemOnePipeline
-from src.training.calibration import TemperatureCalibrator
 from src.training.config import LoraSettings, TrainConfig
-from src.training.metrics import DecisionMetrics
 
 
 def lora_target_modules(model: nn.Module) -> list[str]:
@@ -60,8 +61,9 @@ def build_trainer(
         train_records: Labelled training records.
         eval_records: Labelled evaluation records, or None.
         lora: LoRA settings.
-        training_args: `Trainer` arguments. `remove_unused_columns` is set to
-            False, since the collator needs the raw items. TensorBoard logs
+        training_args: `Trainer` arguments. A copy is used, with
+            `remove_unused_columns` False, since the collator needs the raw
+            items. TensorBoard logs
             go to `output_dir` (`TENSORBOARD_LOGGING_DIR`).
 
     Returns:
@@ -73,14 +75,14 @@ def build_trainer(
         target_modules=lora_target_modules(model),
     )
     max_options: int = model.config.max_options
-    train_dataset = SystemOneDataset(train_records, max_options=max_options)
+    train_dataset = DecisionEngineDataset(train_records, max_options=max_options)
     eval_dataset = (
-        SystemOneDataset(eval_records, shuffle_options=False, max_options=max_options)
+        DecisionEngineDataset(eval_records, shuffle_options=False, max_options=max_options)
         if eval_records is not None
         else None
     )
     print(f"train questions: {len(train_dataset)}, skipped: {train_dataset.skipped}")
-    training_args.remove_unused_columns = False
+    training_args = replace(training_args, remove_unused_columns=False)
     # tensorboard logs in output_dir, not in runs/<date>_<host>: the run is
     # named after output_dir
     os.environ["TENSORBOARD_LOGGING_DIR"] = training_args.output_dir
@@ -91,9 +93,7 @@ def build_trainer(
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
-        data_collator=SystemOneCollator(
-            processor, PromptBuilder(processor.tokenizer, max_options)
-        ),
+        data_collator=DecisionEngineCollator(PromptBuilder(processor, max_options)),
         compute_metrics=DecisionMetrics(),
     )
 
@@ -116,9 +116,7 @@ def main(argv: list[str] | None = None) -> None:
     if not argv:
         raise SystemExit(__doc__)
     config = TrainConfig.from_yaml(argv[0], argv[1:])
-    pipeline = SystemOnePipeline.from_backbone(
-        config.backbone, dtype=PreTrainedSystemOneModel.default_dtype()
-    )
+    model, processor = ModelLoader.load(config.backbone)
     loader = HubRecordLoader(config.data.dataset)
     train_records = loader.load(config.data.train)
     calibration_records = None
@@ -130,8 +128,8 @@ def main(argv: list[str] | None = None) -> None:
         loader.load(config.data.validation) if config.data.validation else None
     )
     trainer = build_trainer(
-        pipeline.model,
-        pipeline.processor,
+        model,
+        processor,
         train_records,
         eval_records,
         config.lora,
@@ -140,14 +138,14 @@ def main(argv: list[str] | None = None) -> None:
     trainer.train(resume_from_checkpoint=config.checkpoint)
     merged: PreTrainedSystemOneModel = trainer.model.merge_and_unload()
     if config.calibration is not None:
-        calibrator = TemperatureCalibrator(merged, pipeline.processor, config.training)
+        calibrator = TemperatureCalibrator(merged, processor, config.training)
         temperature: float = calibrator.calibrate(
             config.calibration, calibration_records
         )
         print(f"temperature: {temperature:.4f}")
     final: Path = Path(config.training.output_dir) / "final"
     merged.save_pretrained(final)
-    pipeline.processor.save_pretrained(final)
+    processor.save_pretrained(final)
 
 
 if __name__ == "__main__":

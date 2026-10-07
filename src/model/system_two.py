@@ -11,8 +11,11 @@ from transformers import (
     StoppingCriteriaList,
 )
 
-from src.model.config import DecisionModelConfig
-from src.model.system_one import PreTrainedSystemOneModel, SystemOneOutput
+from src.common.prompt import PromptBuilder
+from src.constants import SYSTEM_TWO_INSTRUCTION
+from src.model.config import DecisionEngineConfig
+from src.model.output import DecisionEngineOutput
+from src.model.system_one import PreTrainedSystemOneModel
 
 
 class LetterLogitsRecorder(LogitsProcessor):
@@ -99,7 +102,8 @@ class SystemTwoModel(nn.Module):
 
     Args:
         model: The System One model to wrap.
-        tokenizer: Tokenizer of the backbone (decodes the outputs).
+        prompt: Prompt builder with the System Two instruction and the
+            thinking template variables (its tokenizer decodes the outputs).
         max_new_tokens: Cap on generated tokens, thinking included.
         thinking: Whether thinking is on (the answer then comes after
             `</think>`; without it, the prompt holds an empty thinking block).
@@ -108,18 +112,53 @@ class SystemTwoModel(nn.Module):
     def __init__(
         self,
         model: PreTrainedSystemOneModel,
-        tokenizer: Any,
+        prompt: PromptBuilder,
         max_new_tokens: int,
         thinking: bool = False,
     ) -> None:
         super().__init__()
         self.model: PreTrainedSystemOneModel = model
-        self.tokenizer: Any = tokenizer
+        self.prompt: PromptBuilder = prompt
+        self.tokenizer: Any = prompt.processor.tokenizer
         self.max_new_tokens: int = max_new_tokens
         self.thinking: bool = thinking
 
+    @classmethod
+    def from_system_one(
+        cls,
+        model: PreTrainedSystemOneModel,
+        processor: Any,
+        thinking: str,
+        max_new_tokens: int,
+    ) -> "SystemTwoModel":
+        """Builds System Two and its prompt around a System One model.
+
+        Args:
+            model: The System One model to wrap.
+            processor: Processor matching the backbone.
+            thinking: `off`, or a reasoning effort (e.g. `low`); sent to the
+                chat template only if it has levels (Qwen3.8, not Qwen3.5).
+            max_new_tokens: Cap on generated tokens, thinking included.
+
+        Returns:
+            The System Two model (its prompt in `prompt`).
+        """
+        on: bool = thinking != "off"
+        template_kwargs: dict[str, Any] = {"enable_thinking": on}
+        # transformers turns a variable the template does not use into
+        # processor kwargs, which replace `processor_kwargs` (padding)
+        if on and "reasoning_effort" in (processor.chat_template or ""):
+            template_kwargs["reasoning_effort"] = thinking
+        prompt = PromptBuilder(
+            processor,
+            model.config.max_options,
+            SYSTEM_TWO_INSTRUCTION,
+            template_kwargs,
+        )
+        return cls(model, prompt, max_new_tokens, on)
+
     @property
-    def config(self) -> DecisionModelConfig:
+    def config(self) -> DecisionEngineConfig:
         """The wrapped model's config (`Trainer` reads it)."""
         return self.model.config
 
@@ -131,7 +170,7 @@ class SystemTwoModel(nn.Module):
         labels: torch.Tensor | None = None,
         option_mask: torch.Tensor | None = None,
         **backbone_kwargs: Any,
-    ) -> SystemOneOutput:
+    ) -> DecisionEngineOutput:
         """Generates the answers and scores the options.
 
         Args: as `PreTrainedSystemOneModel.forward`.
@@ -161,14 +200,8 @@ class SystemTwoModel(nn.Module):
         logits, errors = self.find_answers(
             new_tokens, recorder.stacked(), self.tokenizer, option_mask, self.thinking
         )
-        probabilities: torch.Tensor = torch.softmax(
-            logits / self.config.temperature, dim=-1
-        )
-        loss: torch.Tensor | None = (
-            nn.functional.cross_entropy(logits, labels) if labels is not None else None
-        )
-        return SystemOneOutput(
-            loss=loss, logits=logits, probabilities=probabilities, errors=errors
+        return DecisionEngineOutput.from_logits(
+            logits, self.config.temperature, labels, errors
         )
 
     @staticmethod

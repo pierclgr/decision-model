@@ -1,31 +1,11 @@
-from dataclasses import dataclass
 from typing import Any
 
 import torch
 from torch import nn
 from transformers import AutoModelForMultimodalLM, PreTrainedModel
-from transformers.utils import ModelOutput
 
-from src.model.config import DecisionModelConfig
-
-
-@dataclass
-class SystemOneOutput(ModelOutput):
-    """Output of `PreTrainedSystemOneModel`.
-
-    Attributes:
-        loss: Cross-entropy of the raw option logits, only if `labels` given.
-        logits: Raw logits of the options (float32; masked options set to the
-            float32 min), shape (batch, num_options).
-        probabilities: Softmax of `logits / temperature`, same shape.
-        errors: System Two only: whether the output had no valid answer
-            block, shape (batch,). None for System One.
-    """
-
-    loss: torch.Tensor | None = None
-    logits: torch.Tensor | None = None
-    probabilities: torch.Tensor | None = None
-    errors: torch.Tensor | None = None
+from src.model.config import DecisionEngineConfig
+from src.model.output import DecisionEngineOutput
 
 
 class PreTrainedSystemOneModel(PreTrainedModel):
@@ -41,7 +21,7 @@ class PreTrainedSystemOneModel(PreTrainedModel):
             `from_pretrained`).
     """
 
-    config: DecisionModelConfig
+    config: DecisionEngineConfig
     base_model_prefix = "backbone"
     input_modalities = ("image", "text")
     # enabled on the backbone layers (`TrainingArguments.gradient_checkpointing`)
@@ -50,7 +30,7 @@ class PreTrainedSystemOneModel(PreTrainedModel):
     accepts_loss_kwargs = False
 
     def __init__(
-        self, config: DecisionModelConfig, backbone: nn.Module | None = None
+        self, config: DecisionEngineConfig, backbone: nn.Module | None = None
     ) -> None:
         super().__init__(config)
         self.backbone: nn.Module = (
@@ -86,7 +66,7 @@ class PreTrainedSystemOneModel(PreTrainedModel):
         """
         backbone = AutoModelForMultimodalLM.from_pretrained(backbone_id, **kwargs)
         attn_implementation = backbone.config._attn_implementation
-        config = DecisionModelConfig(
+        config = DecisionEngineConfig(
             backbone_config=backbone.config,
             temperature=temperature,
             max_options=len(option_token_ids),
@@ -110,7 +90,7 @@ class PreTrainedSystemOneModel(PreTrainedModel):
         labels: torch.Tensor | None = None,
         option_mask: torch.Tensor | None = None,
         **backbone_kwargs: Any,
-    ) -> SystemOneOutput:
+    ) -> DecisionEngineOutput:
         """Scores the options of a question.
 
         Args:
@@ -154,15 +134,6 @@ class PreTrainedSystemOneModel(PreTrainedModel):
             option_logits = option_logits.masked_fill(
                 ~option_mask, torch.finfo(option_logits.dtype).min
             )
-        probabilities: torch.Tensor = torch.softmax(
-            option_logits / self.config.temperature, dim=-1
-        )
-        # raw logits: the temperature is fitted after training
-        loss: torch.Tensor | None = (
-            nn.functional.cross_entropy(option_logits, labels)
-            if labels is not None
-            else None
-        )
-        return SystemOneOutput(
-            loss=loss, logits=option_logits, probabilities=probabilities
+        return DecisionEngineOutput.from_logits(
+            option_logits, self.config.temperature, labels
         )
