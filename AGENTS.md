@@ -74,6 +74,8 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
 - `configs/calibration/`: standalone calibration configs (YAML)
 - `configs/test/`: test run configs (YAML)
 - `docs/`: documentation
+- `assets/`: images (e.g. the results graph used by `README.md`)
+- `README.md`: project overview (install, usage, configs, results)
 
 ## Commands
 - `uv sync`: install the environment (includes `flash-linear-attention`,
