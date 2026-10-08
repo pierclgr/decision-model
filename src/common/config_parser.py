@@ -21,7 +21,8 @@ class ConfigParser:
     ) -> dict[str, Any]:
         """Reads a YAML file and applies CLI overrides.
 
-        The `modal` section is dropped: it belongs to the Modal launcher.
+        The `modal` and `runpod` sections are dropped: they belong to the
+        cloud launchers.
 
         Args:
             path: The YAML file.
@@ -37,8 +38,9 @@ class ConfigParser:
             ValueError: If an override is malformed or unknown.
         """
         values: dict[str, Any] = yaml.safe_load(Path(path).read_text()) or {}
-        # read only by the modal launcher (`src/modal/app.py`)
+        # read only by the cloud launchers (`src/modal/app.py`, `src/runpod/app.py`)
         values.pop("modal", None)
+        values.pop("runpod", None)
         overrides = overrides or []
         if len(overrides) % 2:
             raise ValueError("overrides must be --key value pairs")

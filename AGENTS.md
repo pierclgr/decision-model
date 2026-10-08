@@ -72,6 +72,12 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
     - `tensorboard_app.py`: separate Modal app serving TensorBoard (web
       app on the `runs` Volume), so runs of `app.py` can go in parallel
     - `cache.py`: downloads a config's backbone and dataset (cache)
+  - `runpod/`: RunPod cloud runs
+    - `app.py`: launcher, one pod per task (`cache`, `train`, `calibrate`,
+      `test`); the pod clones the repo at a commit, runs the task (and
+      TensorBoard for `train`) and deletes itself; network volume at
+      `/workspace` with `models`, `datasets`, `runs`, `uv`; REST API v2
+      with `urllib`
 - `configs/train/`: training run configs (YAML)
 - `configs/calibration/`: standalone calibration configs (YAML)
 - `configs/test/`: test run configs (YAML)
@@ -100,6 +106,11 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
   wins
 - `modal deploy src/modal/tensorboard_app.py`: serve TensorBoard on the
   training logs (URL printed)
+- `uv run python -m src.runpod.app --task cache|train|calibrate|test
+  --config <config.yml> [--overrides "..."] [--gpu ID] [--ref COMMIT]`:
+  same tasks on RunPod (needs `RUNPOD_API_KEY`, `RUNPOD_VOLUME_ID` and a
+  RunPod secret `huggingface`); GPU from the config's `runpod.gpu` (default
+  `NVIDIA H200`); runs the pushed local `HEAD`
 
 ## Conventions
 - Python: PEP8, Google docstrings, type hints everywhere (PEP 484)

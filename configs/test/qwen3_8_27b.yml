@@ -14,3 +14,6 @@ testing:
 
 modal:
   gpu: H100
+
+runpod:
+  gpu: NVIDIA H100 80GB HBM3

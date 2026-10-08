@@ -125,6 +125,33 @@ modal deploy src/modal/tensorboard_app.py
 The GPU comes from the config's `modal.gpu` (default H200). `--gpu` wins over
 it, and `--overrides "..."` passes config overrides.
 
+### RunPod (cloud GPUs)
+The same tasks run on [RunPod](https://www.runpod.io) with prepaid credits.
+Each task gets its own pod: the pod clones this repository at a commit, runs
+the task and then deletes itself. Results stay on a network volume. A network
+volume works with one running pod at a time, so run one task at a time.
+
+Setup, once:
+- create a network volume (Secure Cloud, in a data center with the GPU)
+- create a RunPod secret `huggingface` with your HF token
+- set `RUNPOD_API_KEY` and `RUNPOD_VOLUME_ID` in your shell
+
+```bash
+# download the backbone and dataset once, into the network volume
+uv run python -m src.runpod.app --task cache --config configs/train/qwen3_8_27b.yml
+
+# train (prints the TensorBoard URL)
+uv run python -m src.runpod.app --task train --config configs/train/qwen3_8_27b.yml
+
+# calibrate or test
+uv run python -m src.runpod.app --task test --config configs/test/qwen3_8_27b.yml
+```
+
+The pod runs the local `HEAD` commit, so push it first (`--ref` picks
+another commit). The GPU comes from the config's `runpod.gpu` (default
+`NVIDIA H200`). `--gpu` wins over it, and `--overrides "..."` passes config
+overrides. Task logs go to `runs/logs/<pod_id>.log` on the network volume.
+
 ## Configs
 - `configs/train/`: training runs (`backbone`, `seed`, `lora`, `data`,
   `training`, optional `calibration`)
@@ -148,6 +175,7 @@ src/
   calibration/  temperature calibration
   testing/      test script
   modal/        Modal apps (tasks and TensorBoard)
+  runpod/       RunPod launcher (tasks, TensorBoard in the train pod)
 configs/        YAML run configs
 ```
 
