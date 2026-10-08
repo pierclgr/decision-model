@@ -88,7 +88,12 @@ def api(method: str, path: str, key: str, body: dict | None = None) -> dict:
         f"{API}{path}",
         method=method,
         data=None if body is None else json.dumps(body).encode(),
-        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+            # cloudflare blocks urllib's default user agent (error 1010)
+            "User-Agent": "ima",
+        },
     )
     try:
         with urlopen(request) as response:
