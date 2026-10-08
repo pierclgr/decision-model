@@ -27,6 +27,8 @@ training:
   gradient_accumulation_steps: 8
   bf16: true
   gradient_checkpointing: true
+  # parallel batch preparation: one process is too slow on RunPod's CPUs
+  dataloader_num_workers: 16
   eval_strategy: epoch
   # about 290 steps per epoch: a checkpoint every ~5%, the last 2 kept
   save_strategy: steps
