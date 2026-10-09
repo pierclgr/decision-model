@@ -7,6 +7,10 @@ from transformers import TrainingArguments
 from src.common.config_parser import ConfigParser
 
 
+# seed of the random questions of `TestDataSettings.sample`
+SAMPLE_SEED: int = 42
+
+
 @dataclass
 class TestDataSettings:
     """Test data on the HF Hub (kev-vision layout).
@@ -14,6 +18,8 @@ class TestDataSettings:
     Attributes:
         dataset: HF dataset id.
         split: Test split (slices like `test[:500]` work).
+        sample: Number of random questions of the split to test (seed
+            `SAMPLE_SEED`, the same ones in every run), or None for all.
     """
 
     # not a pytest test class
@@ -21,6 +27,7 @@ class TestDataSettings:
 
     dataset: str
     split: str
+    sample: int | None = None
 
 
 # System Two thinking: off, or the reasoning effort (Qwen3.8 template levels)

@@ -65,7 +65,7 @@ read from the logits of the option letters. See `docs/MODEL_SPEC.md`.
     - `config.py`: `TestConfig` (YAML: `model`, optional `temperature`,
       `data`, `testing`)
     - `test.py`: test script (metrics and seconds per question on a
-      dataset split)
+      dataset split, after the first 10 batches of warm-up)
   - `modal/`: Modal cloud runs
     - `app.py`: Modal app with `cache`, `train`, `calibrate`, `test`
       (GPUs, Volumes `models`, `datasets`, `runs` as persistent caches)

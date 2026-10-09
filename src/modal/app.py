@@ -91,7 +91,8 @@ def calibrate(argv: list[str]) -> None:
     main(argv)
 
 
-@app.function(gpu=GPU, timeout=DAY)
+# fixed cpu and memory, so test times do not depend on the host's free cores
+@app.function(gpu=GPU, cpu=8, memory=32768, timeout=DAY)
 def test(argv: list[str]) -> None:
     """Runs `src.testing.test` with `argv`."""
     from src.testing.test import main
