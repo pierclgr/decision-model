@@ -180,22 +180,37 @@ configs/        YAML run configs
 ```
 
 ## Results
-Qwen3.5-0.8B on `Jacqkues/kev-vision-decisions-full`:
+On `Jacqkues/kev-vision-decisions-full`:
 
-| Model | Mode | Test set | Accuracy | Brier | ECE |
-|---|---|---|---|---|---|
-| zero-shot | System Two | `test` | 49.7% | 0.623 | 0.266 |
-| zero-shot | System One | `test` | 51.8% | 0.512 | 0.104 |
-| fine-tuned | System One | `test` | 75.3% | 0.262 | 0.029 |
-| zero-shot | System Two | `test_ood` | 60.4% | 0.477 | 0.143 |
-| zero-shot | System One | `test_ood` | 58.4% | 0.505 | 0.051 |
-| fine-tuned | System One | `test_ood` | 67.8% | 0.414 | 0.035 |
+| Backbone | Model | Mode | Test set | Accuracy | Brier | ECE | Seconds/question |
+|---|---|---|---|---|---|---|---|
+| Qwen3.5-0.8B | zero-shot | System Two | `test` | 49.7% | 0.623 | 0.266 | 0.148 |
+| Qwen3.5-0.8B | zero-shot | System One | `test` | 51.8% | 0.512 | 0.104 | 0.021 |
+| Qwen3.5-0.8B | fine-tuned | System One | `test` | 75.3% | 0.262 | 0.029 | 0.021 |
+| Qwen3.8-27B | zero-shot | System Two | `test` | 62.9% | 0.497 | 0.232 | 0.767 |
+| Qwen3.8-27B | zero-shot | System One | `test` | 65.2% | 0.427 | 0.122 | 0.068 |
+| Qwen3.8-27B | fine-tuned | System One | `test` | 79.2% | 0.218 | 0.037 | 0.077 |
+| Qwen3.5-0.8B | zero-shot | System Two | `test_ood` | 60.4% | 0.477 | 0.143 | 0.166 |
+| Qwen3.5-0.8B | zero-shot | System One | `test_ood` | 58.4% | 0.505 | 0.051 | 0.052 |
+| Qwen3.5-0.8B | fine-tuned | System One | `test_ood` | 67.8% | 0.414 | 0.035 | 0.049 |
+| Qwen3.8-27B | zero-shot | System Two | `test_ood` | 82.2% | 0.212 | 0.075 | 1.008 |
+| Qwen3.8-27B | zero-shot | System One | `test_ood` | 74.5% | 0.338 | 0.046 | 0.392 |
+| Qwen3.8-27B | fine-tuned | System One | `test_ood` | 89.4% | 0.158 | 0.015 | 0.107 |
 
 `test_ood` holds sources not seen in training.
 
-Accuracy against time per question:
+Accuracy against time per question, one graph per test set:
 
-![Accuracy vs seconds per question](assets/accuracy_vs_time.png)
+![Accuracy vs seconds per question on test](assets/accuracy_vs_time_test.png)
+
+![Accuracy vs seconds per question on test_ood](assets/accuracy_vs_time_test_ood.png)
+
+Times depend on the GPU, batch size and data loading, so compare them within
+a model and mode. Qwen3.5-0.8B ran on Modal (System One: H100, batch 8;
+System Two: H200, batch 64). Qwen3.8-27B ran on an H200 with 16 data workers
+(System One on RunPod, batch 4; System Two on Modal, batch 16). The 27B
+zero-shot System One time on `test_ood` is high: that run shared its storage
+with another test.
 
 ## Limits
 - Max 26 options per question.
